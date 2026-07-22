@@ -1,0 +1,41 @@
+{
+  "name": "pLauncher",
+  "author": "Le0xFF",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "pLauncher",
+    "uuid": "07b1efa9-3d32-423c-b0e7-572cbc0893b8",
+    "sdkVersion": "3",
+    "enableMultiJS": false,
+    "targetPlatforms": [
+      "basalt",
+      "emery"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "companionApp": {
+      "android": {
+        "url": "https://github.com/le0xff/pLauncher",
+        "apps": [
+          {
+            "package": "com.le0xff.plauncher"
+          }
+        ]
+      }
+    },
+    "resources": {
+      "media": [
+        {
+          "type": "bitmap",
+          "name": "APP_ICON",
+          "file": "images/app_launcher_icon.png",
+          "aapl52png": "images/app_launcher_icon.png"
+        }
+      ]
+    }
+  }
+}
