@@ -1,2 +1,21 @@
+# KiloCode
 .kilo
+
+# Build outputs
+**/build/
 **/*.log
+
+# Pebble watch app
+pbw/.lock-waf_linux_build
+
+# Android companion app
+apk/.gradle/
+apk/.kotlin/
+apk/local.properties
+apk/*.hprof
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
