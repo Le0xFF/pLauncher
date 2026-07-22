@@ -1,18 +1,31 @@
 package com.le0xff.plauncher.ui
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 
 @Composable
-fun SettingsScreen() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Text("Settings")
+fun SettingsScreen(
+    showSystemApps: Boolean,
+    onShowSystemAppsChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
+        Text("Settings", style = MaterialTheme.typography.headlineSmall)
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        ListItem(
+            headlineContent = { Text("Show system apps") },
+            trailingContent = {
+                Switch(checked = showSystemApps, onCheckedChange = onShowSystemAppsChange)
+            }
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text("pLauncher v1.0.0", style = MaterialTheme.typography.bodySmall)
     }
 }

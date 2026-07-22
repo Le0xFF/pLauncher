@@ -1,14 +1,122 @@
 package com.le0xff.plauncher.ui
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import android.graphics.drawable.Drawable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import com.le0xff.plauncher.model.LaunchApp
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
 
 @Composable
-fun AppPickerDialog(onDismiss: () -> Unit) {
-    Box(contentAlignment = Alignment.Center) {
-        Text("App Picker")
+fun AppPickerDialog(
+    selectedApps: List<LaunchApp>,
+    showSystemApps: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (List<LaunchApp>) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val installedApps = remember(context) { getInstalledLaunchableApps(context) }
+
+    val filtered = remember(installedApps, showSystemApps) {
+        if (showSystemApps) installedApps else installedApps.filter { !it.isSystem }
     }
+
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredBySearch = remember(filtered, searchQuery) {
+        if (searchQuery.isBlank()) filtered else filtered.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
+
+    val selectedPackageNames = remember(selectedApps) { selectedApps.map { it.packageName }.toSet() }
+    var localSelected by remember { mutableStateOf(selectedPackageNames) }
+
+    LaunchedEffect(selectedPackageNames) {
+        localSelected = selectedPackageNames
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pick Apps") },
+        text = {
+            Column(modifier = Modifier.height(400.dp)) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search...") },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    singleLine = true
+                )
+                LazyColumn(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
+                    items(filteredBySearch, key = { it.packageName }) { app ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = localSelected.contains(app.packageName),
+                                onCheckedChange = { checked ->
+                                    localSelected = if (checked) localSelected + app.packageName else localSelected - app.packageName
+                                }
+                            )
+                            app.icon?.let {
+                                Image(
+                                    bitmap = it.toBitmap(48, 48).asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp).padding(end = 8.dp)
+                                )
+                            }
+                            Text(app.name, modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val result = localSelected.map { pkg ->
+                    val info = installedApps.find { it.packageName == pkg }
+                    if (info != null) LaunchApp(info.packageName, info.name) else LaunchApp(pkg, pkg)
+                }
+                onConfirm(result)
+            }) {
+                Text("Done")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+data class InstalledAppInfo(
+    val packageName: String,
+    val name: String,
+    val icon: Drawable?,
+    val isSystem: Boolean
+)
+
+fun getInstalledLaunchableApps(context: android.content.Context): List<InstalledAppInfo> {
+    val pm = context.packageManager
+    val packages = pm.getInstalledPackages(PackageManager.GET_META_DATA)
+    return packages.mapNotNull { packageInfo ->
+        val appInfo = packageInfo.applicationInfo ?: return@mapNotNull null
+        val packageName = appInfo.packageName
+        val label = appInfo.loadLabel(pm).toString()
+        val icon = appInfo.loadIcon(pm)
+        val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0 ||
+            (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+        InstalledAppInfo(packageName, label.ifBlank { packageName }, icon, isSystem)
+    }.sortedBy { it.name.lowercase() }
 }
