@@ -109,3 +109,76 @@ Packet types: `0` = Watch Welcome, `1` = Launch App, `10` = Phone Welcome, `11` 
 - No connection status indicator visible in UI (TopAppBar was removed)
 - No visual feedback on watch when app is launched
 - Settings screen shows static version text, no dynamic app info
+
+---
+
+## #2 — UI Improvements: button labels, empty state, layout constants
+
+### Overview
+
+Improved the watch app UI with button action labels, an informative empty-state message, and a centralized layout/string configuration system. Implementation follows a 2-step plan from `.kilo/plans/1784873002325-plauncher-ui-improvements.md`, plus iterative refinements based on user feedback.
+
+### Watch App (`pbw/`) — 171 lines C, 12 source files (3 new)
+
+#### New Files
+
+| File | Lines | Purpose |
+|---|---|---|
+| `strings.h` / `strings.c` | 19 | Centralized text strings: `STR_LABEL_UP`, `STR_LABEL_DOWN`, `STR_LABEL_LAUNCH` defines, `str_empty_message()` function for the empty-state message |
+| `layout.h` | 24 | Layout constants: font heights, margins, spacing, column divisors, zone counts — all magic numbers extracted from `window_main.c` |
+
+#### Modified Files
+
+| File | Lines | Changes |
+|---|---|---|
+| `window_main.c` | 128 | Added 3 label TextLayers (`s_label_up`, `s_label_down`, `s_label_launch`), screen bounds tracking (`s_screen_bounds`), dynamic layout calculations, empty-state handling, null guard for early calls |
+
+#### Layout Architecture
+
+The UI uses a **dynamic layout** calculated from `layer_get_bounds()` in `window_load()`, ensuring compatibility with both Basalt (144×168) and Emery (200×228) screens. All dimensional values come from `layout.h` constants (`LAYOUT_*` prefix).
+
+**Screen layout** (when apps present):
+- **App name** (`s_text_layer`): GOTHIC_24, centered vertically, occupies left portion of screen (width = `w - w/5`)
+- **Button labels** (`s_label_up`, `s_label_launch`, `s_label_down`): GOTHIC_18, right column (width = `w/5`), each centered vertically within 1/3 zones of the screen height
+  - Up: top zone, Launch: middle zone, Down: bottom zone
+- **Index** (`s_index_layer`): GOTHIC_14, bottom edge, width matches app name (not full screen), centered horizontally relative to the name
+
+**Screen layout** (when no apps):
+- **Empty message** (`s_text_layer`): multi-line `"No apps\nAdd via\nCompanion"` in GOTHIC_24, centered both vertically and horizontally within the left portion of the screen. Uses a two-step centering approach: first expands the layer to full available height to let `text_layer_get_content_size()` calculate the correct multi-line height, then repositions the frame to center vertically.
+- **Button labels**: remain visible
+- **Index**: hidden
+
+#### Key Implementation Details
+
+**Early call guard**: `window_main_update_display()` is called from `window_main_create()` before `window_load()` runs (layers are NULL). A null check (`if (!s_text_layer) return;`) prevents crashes. This was the root cause of an initial crash that also affected the companion app.
+
+**Two-step vertical centering**: `text_layer_get_content_size()` calculates dimensions based on the *current* frame. To correctly measure a multi-line text, the frame is first expanded to full height, the content size is read, then the frame is repositioned to center the content vertically.
+
+**Dynamic frame restoration**: When transitioning from empty to populated state, `window_main_update_display()` recalculates all frames from `s_screen_bounds`, ensuring clean transitions without visual artifacts.
+
+**API compatibility**: Used `layer_set_hidden()` (base Layer API) instead of the non-existent `text_layer_set_hidden()`. Used `layer_set_frame()` instead of `text_layer_set_frame()`.
+
+#### Bug Fixes Applied
+
+1. **Crash on launch**: `window_main_update_display()` called before layers initialized. Fixed with null guard.
+2. **Text truncation (empty message)**: `text_layer_get_content_size()` returned wrong height when called on a narrow frame. Fixed with two-step expand-measure-center approach.
+3. **Label positioning**: Labels were anchored to zone top instead of centered. Fixed by calculating `y = zone_center - label_height/2`.
+4. **Index alignment**: Index was full-screen width instead of matching app name width. Fixed to use `w_name` width at bottom edge.
+
+#### Configuration
+
+- `layout.h`: 8 constants with `LAYOUT_` prefix for all layout dimensions
+- `strings.h`/`strings.c`: 3 label defines (`STR_LABEL_*`) + 1 empty message function
+
+### Code Statistics
+
+| Component | Files | Lines |
+|---|---|---|
+| Watch App (C) | 12 | 519 (348 existing + 171 new/changed) |
+| Android App (Kotlin) | 8 | 598 (unchanged) |
+| **Total** | **20** | **1117** |
+
+### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery`
+- Android app: `./gradlew --no-daemon assembleDebug` — BUILD SUCCESSFUL (unchanged)
