@@ -13,6 +13,7 @@ class AppDataStore(private val context: Context) {
     companion object {
         private const val KEY_APPS = "apps"
         private const val KEY_SYSTEM_APPS = "system_apps"
+        private const val KEY_GENERATE_CRASH_REPORTS = "generate_crash_reports"
         private const val SEP = "|"
         private const val LINE_SEP = "\n"
     }
@@ -22,6 +23,9 @@ class AppDataStore(private val context: Context) {
 
     private val _showSystemApps = MutableStateFlow(loadShowSystemApps())
     val showSystemApps: StateFlow<Boolean> = _showSystemApps
+
+    private val _generateCrashReports = MutableStateFlow<Boolean>(loadGenerateCrashReports())
+    val generateCrashReports: StateFlow<Boolean> = _generateCrashReports
 
     fun saveApps(apps: List<LaunchApp>) {
         _apps.value = apps
@@ -35,6 +39,13 @@ class AppDataStore(private val context: Context) {
         prefs.edit().putBoolean(KEY_SYSTEM_APPS, value).apply()
     }
 
+    fun getGenerateCrashReports(): Boolean = _generateCrashReports.value
+
+    fun setGenerateCrashReports(value: Boolean) {
+        _generateCrashReports.value = value
+        prefs.edit().putBoolean(KEY_GENERATE_CRASH_REPORTS, value).apply()
+    }
+
     private fun loadApps(): List<LaunchApp> {
         val data = prefs.getString(KEY_APPS, "") ?: ""
         if (data.isBlank()) return emptyList()
@@ -46,5 +57,9 @@ class AppDataStore(private val context: Context) {
 
     private fun loadShowSystemApps(): Boolean {
         return prefs.getBoolean(KEY_SYSTEM_APPS, false)
+    }
+
+    private fun loadGenerateCrashReports(): Boolean {
+        return prefs.getBoolean(KEY_GENERATE_CRASH_REPORTS, false)
     }
 }

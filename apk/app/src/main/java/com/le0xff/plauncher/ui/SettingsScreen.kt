@@ -10,6 +10,8 @@ import androidx.compose.ui.unit.dp
 fun SettingsScreen(
     showSystemApps: Boolean,
     onShowSystemAppsChange: (Boolean) -> Unit,
+    generateCrashReports: Boolean,
+    onGenerateCrashReportsChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
@@ -21,6 +23,16 @@ fun SettingsScreen(
             headlineContent = { Text("Show system apps") },
             trailingContent = {
                 Switch(checked = showSystemApps, onCheckedChange = onShowSystemAppsChange)
+            }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        ListItem(
+            headlineContent = { Text("Generate crash reports") },
+            supportingContent = { Text("Show crash details when the app crashes") },
+            trailingContent = {
+                Switch(checked = generateCrashReports, onCheckedChange = onGenerateCrashReportsChange)
             }
         )
 
