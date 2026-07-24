@@ -182,3 +182,83 @@ The UI uses a **dynamic layout** calculated from `layer_get_bounds()` in `window
 
 - Watch app: `pebble build` — compiles cleanly for `basalt` and `emery`
 - Android app: `./gradlew --no-daemon assembleDebug` — BUILD SUCCESSFUL (unchanged)
+
+---
+
+## #3 — Crash Report Screen for Companion App
+
+### Overview
+
+Implemented a crash reporting system for the Android companion app that displays crash details on screen when the app crashes. The feature is user-controlled via a "Generate crash reports" toggle in Settings (disabled by default). When enabled, uncaught exceptions on the main thread are caught, and a dedicated CrashReportActivity shows the exception type, message, stack trace, and device information, with options to restart or close the app.
+
+### Android Companion App (`apk/`) — ~233 lines Kotlin, 2 new source files
+
+#### New Files
+
+| File | Lines | Purpose |
+|---|---|---|
+| `CrashApplication.kt` | 62 | Custom Application class with conditional `UncaughtExceptionHandler` on the main thread. Only activates when `generate_crash_reports` preference is `true`. Captures exception type, message, truncated stack trace (2000 chars), device model, Android version, and app version. Saves report to SharedPreferences and launches `CrashReportActivity` via Intent with `NEW_TASK` + `CLEAR_TASK` flags. |
+| `CrashReportActivity.kt` | 171 | Compose-based activity that parses and displays the crash report in structured sections: exception (error-colored headline), message, monospace stack trace in a surface-variant card, device info. Two action buttons: "Restart App" (relaunches MainActivity) and "Close App" (terminates via `finishAndRemoveTask()`). Uses separate `taskAffinity` for isolation from the main app task. Falls back to generic error message if crash report extra is missing. |
+
+#### Modified Files
+
+| File | Lines | Changes |
+|---|---|---|
+| `AppDataStore.kt` | +6 | Added `KEY_GENERATE_CRASH_REPORTS` constant, `_generateCrashReports` StateFlow, `generateCrashReports` exposed property, `getGenerateCrashReports()`, `setGenerateCrashReports()`, `loadGenerateCrashReports()` (default `false`) |
+| `SettingsScreen.kt` | +10 | Added `generateCrashReports` and `onGenerateCrashReportsChange` parameters, new `ListItem` with switch and supporting text "Show crash details when the app crashes" |
+| `MainActivity.kt` | +9 | Added `_generateCrashReports`/`generateCrashReports`/`setGenerateCrashReports()` to AppViewModel, collection in Compose body, load in `LaunchedEffect`, pass-through to `SettingsScreen` |
+| `AndroidManifest.xml` | +7 | Registered `.CrashApplication` as application class, declared `.CrashReportActivity` with `exported=false`, NoActionBar theme, and separate `taskAffinity="com.le0xff.plauncher.crash"` |
+
+#### Key Implementation Details
+
+**Conditional handler**: `CrashApplication.onCreate()` reads the `generate_crash_reports` boolean from SharedPreferences (`"plauncher"` prefs). If `false`, no handler is installed and Android's default crash behavior is preserved. If `true`, a custom `UncaughtExceptionHandler` is installed on the main thread.
+
+**Crash report format**: The handler builds a structured multi-line string with labeled sections (`Exception:`, `Message:`, `Stack Trace:`, `Device:`, `Android:`, `App Version:`), separated by blank lines. Stack trace is truncated to 2000 characters. App version is read from `PackageManager` with try-catch fallback to `"unknown"`.
+
+**Process lifecycle**: The handler calls `startActivity()` for `CrashReportActivity` within a try-catch (the process may already be shutting down), then delegates to the original handler to let Android terminate the crashed process. `CrashReportActivity` runs in a separate task (`taskAffinity`) so it survives the original process death.
+
+**Report parsing**: `CrashReportActivity` parses the report string line-by-line, extracting sections by prefix matching (`Exception:`, `Message:`, `Stack Trace:`, `Device:`). Stack trace lines are collected between the "Stack Trace:" header and the "Device:" section. Device info lines are collected from "Device:" onward.
+
+**UI layout**: `Scaffold` with `TopAppBar` ("pLauncher has crashed"), scrollable `Column` body with styled sections, `Divider` separators, monospace stack trace in a `Card` with `surfaceVariant` background, and a bottom `Row` with two equal-width buttons.
+
+**Persistence**: Crash reports are saved to SharedPreferences (`"last_crash_report"` key) for potential future log inspection. The toggle preference uses the same prefs file as other settings (`"plauncher"`, key `"generate_crash_reports"`).
+
+#### Architecture
+
+```
+[User enables toggle in Settings]
+        |
+        v
+[AppDataStore saves to SharedPreferences]
+        |
+        v (next app launch)
+[CrashApplication.onCreate() reads preference]
+        |
+        v (if true)
+[UncaughtExceptionHandler installed on main thread]
+        |
+        v (on crash)
+[Handler builds report string, saves to prefs, launches CrashReportActivity]
+        |
+        v
+[CrashReportActivity parses and displays report]
+        |
+  +-----+-----+
+  |           |
+[Restart]   [Close]
+  |           |
+[MainActivity] [Terminate]
+```
+
+#### Code Statistics
+
+| Component | Files | Lines |
+|---|---|---|
+| Watch App (C) | 12 | 519 (unchanged) |
+| Android App (Kotlin) | 10 | 831 (598 existing + 233 new/changed) |
+| **Total** | **22** | **1350** |
+
+#### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
+- Android app: `./gradlew --no-daemon assembleDebug` — BUILD SUCCESSFUL
