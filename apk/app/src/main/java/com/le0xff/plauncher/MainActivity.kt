@@ -32,6 +32,9 @@ class AppViewModel : ViewModel() {
     private val _showSystemApps = MutableStateFlow(false)
     val showSystemApps: StateFlow<Boolean> = _showSystemApps.asStateFlow()
 
+    private val _generateCrashReports = MutableStateFlow(false)
+    val generateCrashReports: StateFlow<Boolean> = _generateCrashReports.asStateFlow()
+
     private val _showPicker = MutableStateFlow(false)
     val showPicker: StateFlow<Boolean> = _showPicker.asStateFlow()
 
@@ -47,6 +50,10 @@ class AppViewModel : ViewModel() {
 
     fun setShowSystemApps(value: Boolean) {
         _showSystemApps.value = value
+    }
+
+    fun setGenerateCrashReports(value: Boolean) {
+        _generateCrashReports.value = value
     }
 
     fun setShowPicker(value: Boolean) {
@@ -80,6 +87,7 @@ class MainActivity : ComponentActivity() {
 
                 val apps by viewModel.apps.collectAsState()
                 val showSystemApps by viewModel.showSystemApps.collectAsState()
+                val generateCrashReports by viewModel.generateCrashReports.collectAsState()
                 val showPicker by viewModel.showPicker.collectAsState()
                 val searchQuery by viewModel.searchQuery.collectAsState()
                 val connectionStatus by viewModel.connectionStatus.collectAsState()
@@ -87,6 +95,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     viewModel.setApps(dataStore.apps.value)
                     viewModel.setShowSystemApps(dataStore.getShowSystemApps())
+                    viewModel.setGenerateCrashReports(dataStore.getGenerateCrashReports())
                 }
 
                 var selectedTab by remember { mutableStateOf(0) }
@@ -123,6 +132,11 @@ class MainActivity : ComponentActivity() {
                             onShowSystemAppsChange = {
                                 viewModel.setShowSystemApps(it)
                                 dataStore.setShowSystemApps(it)
+                            },
+                            generateCrashReports = generateCrashReports,
+                            onGenerateCrashReportsChange = {
+                                viewModel.setGenerateCrashReports(it)
+                                dataStore.setGenerateCrashReports(it)
                             },
                             modifier = Modifier.padding(padding)
                         )

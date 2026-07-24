@@ -13,6 +13,7 @@
     </queries>
 
     <application
+        android:name=".CrashApplication"
         android:allowBackup="true"
         android:label="pLauncher"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
@@ -27,6 +28,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".CrashReportActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar"
+            android:taskAffinity="com.le0xff.plauncher.crash" />
 
         <service
             android:name=".PebbleListenerService"
