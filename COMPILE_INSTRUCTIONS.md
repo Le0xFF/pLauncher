@@ -50,18 +50,17 @@ pebble install --phone <phone-ip-address>
 
 ### Environment Variables
 
-Before building, set the required variables:
+Before building, set the required variable:
 
 ```bash
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 export ANDROID_HOME=${HOME}/ANDROID/sdk
 ```
 
 ### Prerequisites
 
 - Android SDK installed at `${HOME}/ANDROID/sdk`
-- JDK 17 or newer
-- `JAVA_HOME` and `ANDROID_HOME` environment variables set (see above)
+- JDK 17 installed (the project's `gradle.properties` configures `org.gradle.java.home` to use Java 17 automatically)
+- `ANDROID_HOME` environment variable set (see above)
 - Android Studio (optional, for IDE-based development)
 
 ### Build Command
