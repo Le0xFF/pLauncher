@@ -73,6 +73,8 @@ See `COMPILE_INSTRUCTIONS.md` for detailed build steps, prerequisites, and troub
 - CloudPebble (browser IDE): `https://cloudpebble.repebble.com`
 - AppMessage API Reference: `https://developer.repebble.com/docs/c/Foundation/AppMessage/`
 - App Publishing: `https://developer.repebble.com/dashboard`
+- PebbleKit Android API: `https://developer.rebble.io/docs/pebblekit-android/com/getpebble/android/kit/PebbleKit/`
+- Pebble hardware documentation: `https://developer.repebble.com/guides/tools-and-resources/hardware-information/`
 
 ## Pebble additional details
 
