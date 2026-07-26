@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
+import com.le0xff.plauncher.R
 import java.lang.Thread.UncaughtExceptionHandler
 
 class CrashApplication : Application() {
@@ -49,14 +50,24 @@ class CrashApplication : Application() {
             "unknown"
         }
 
-        return """Exception: ${ex.javaClass.simpleName}
-Message: ${ex.message ?: "No message"}
+        val labelException = applicationContext.getString(R.string.report_label_exception)
+        val labelMessage = applicationContext.getString(R.string.report_label_message)
+        val noMessage = applicationContext.getString(R.string.report_no_message)
+        val labelStacktrace = applicationContext.getString(R.string.report_label_stacktrace)
+        val labelDevice = applicationContext.getString(R.string.report_label_device)
+        val labelAndroid = applicationContext.getString(R.string.report_label_android)
+        val labelAppVersion = applicationContext.getString(R.string.report_label_app_version)
 
-Stack Trace:
-$truncatedStack
+        return """
+            ${labelException}${ex.javaClass.simpleName}
+            ${labelMessage}${ex.message ?: noMessage}
 
-Device: ${Build.MODEL}
-Android: ${Build.VERSION.RELEASE}
-App Version: $appVersion""".trimIndent()
+            ${labelStacktrace}
+            $truncatedStack
+
+            ${labelDevice}${Build.MODEL}
+            ${labelAndroid}${Build.VERSION.RELEASE}
+            ${labelAppVersion}$appVersion
+        """.trimIndent()
     }
 }

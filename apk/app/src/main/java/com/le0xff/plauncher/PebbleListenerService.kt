@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import com.le0xff.plauncher.R
 import com.le0xff.plauncher.data.AppDataStore
 import io.rebble.pebblekit2.client.BasePebbleListenerService
 import io.rebble.pebblekit2.common.model.PebbleDictionary
@@ -41,18 +42,18 @@ class PebbleListenerService : BasePebbleListenerService() {
         val powerManager = getSystemService(PowerManager::class.java)
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
-            "pLauncher:PebbleListenerService"
+            applicationContext.getString(R.string.wakelock_tag)
         ).apply { setReferenceCounted(false) }
 
         createChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("Waiting for Pebble..."))
+        startForeground(NOTIFICATION_ID, buildNotification(applicationContext.getString(R.string.notif_waiting)))
     }
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Pebble Connection",
+                getString(R.string.notif_channel_name),
                 NotificationManager.IMPORTANCE_LOW
             )
             notificationManager.createNotificationChannel(channel)
@@ -94,7 +95,7 @@ class PebbleListenerService : BasePebbleListenerService() {
             helper.sendAppList(apps, watch)
         }
         wakeLock?.let { if (!it.isHeld) it.acquire() }
-        updateNotification("Connected")
+        updateNotification(getString(R.string.status_connected))
         return ReceiveResult.Ack
     }
 
@@ -116,7 +117,7 @@ class PebbleListenerService : BasePebbleListenerService() {
             startActivity(launchIntent)
         }
 
-        updateNotification("Connected")
+        updateNotification(getString(R.string.status_connected))
         return ReceiveResult.Ack
     }
 
@@ -132,7 +133,7 @@ class PebbleListenerService : BasePebbleListenerService() {
 
     override fun onAppClosed(watchappUUID: UUID, watch: WatchIdentifier) {
         wakeLock?.let { if (it.isHeld) it.release() }
-        updateNotification("Disconnected — waiting...")
+        updateNotification(getString(R.string.notif_disconnected))
     }
 
     private fun buildNotification(status: String): android.app.Notification {
@@ -147,7 +148,7 @@ class PebbleListenerService : BasePebbleListenerService() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("pLauncher")
+            .setContentTitle(getString(R.string.notif_title))
             .setContentText(status)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)

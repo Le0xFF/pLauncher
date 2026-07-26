@@ -10,7 +10,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.le0xff.plauncher.R
 
 @Composable
 fun SettingsScreen(
@@ -25,12 +27,12 @@ fun SettingsScreen(
     val context = LocalContext.current
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        Text("Settings", style = MaterialTheme.typography.headlineSmall)
+        Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
 
         Spacer(modifier = Modifier.height(16.dp))
 
         ListItem(
-            headlineContent = { Text("Show system apps") },
+            headlineContent = { Text(stringResource(R.string.settings_show_system_apps)) },
             trailingContent = {
                 Switch(checked = showSystemApps, onCheckedChange = onShowSystemAppsChange)
             }
@@ -39,8 +41,8 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         ListItem(
-            headlineContent = { Text("Generate crash reports") },
-            supportingContent = { Text("Show crash details when the app crashes") },
+            headlineContent = { Text(stringResource(R.string.settings_generate_crash_reports)) },
+            supportingContent = { Text(stringResource(R.string.settings_crash_reports_desc)) },
             trailingContent = {
                 Switch(checked = generateCrashReports, onCheckedChange = onGenerateCrashReportsChange)
             }
@@ -48,17 +50,17 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text("Background Launch Permissions", style = MaterialTheme.typography.titleMedium)
-        Text("Required for launching apps from Pebble when this app is in background", style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.settings_perm_section_title), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.settings_perm_section_desc), style = MaterialTheme.typography.bodySmall)
 
         Spacer(modifier = Modifier.height(8.dp))
 
         ListItem(
-            headlineContent = { Text("Draw Over Other Apps") },
-            supportingContent = { Text("Allows launching apps from background service") },
+            headlineContent = { Text(stringResource(R.string.settings_draw_overlays)) },
+            supportingContent = { Text(stringResource(R.string.settings_draw_overlays_desc)) },
             trailingContent = {
                 if (canDrawOverlays) {
-                    Text("Granted")
+                    Text(stringResource(R.string.settings_granted))
                 } else {
                     Button(onClick = {
                         val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
@@ -66,7 +68,7 @@ fun SettingsScreen(
                         }
                         context.startActivity(intent)
                     }) {
-                        Text("Grant")
+                        Text(stringResource(R.string.button_grant))
                     }
                 }
             }
@@ -75,11 +77,11 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(4.dp))
 
         ListItem(
-            headlineContent = { Text("Ignore Battery Optimizations") },
-            supportingContent = { Text("Prevents aggressive service killing") },
+            headlineContent = { Text(stringResource(R.string.settings_ignore_battery)) },
+            supportingContent = { Text(stringResource(R.string.settings_ignore_battery_desc)) },
             trailingContent = {
                 if (ignoringBatteryOpt) {
-                    Text("Granted")
+                    Text(stringResource(R.string.settings_granted))
                 } else {
                     Button(onClick = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -89,7 +91,7 @@ fun SettingsScreen(
                             context.startActivity(intent)
                         }
                     }) {
-                        Text("Grant")
+                        Text(stringResource(R.string.button_grant))
                     }
                 }
             }
@@ -97,7 +99,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        Text("pLauncher v1.0.0", style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.settings_version), style = MaterialTheme.typography.bodySmall)
     }
 }
 
