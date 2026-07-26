@@ -262,3 +262,107 @@ Implemented a crash reporting system for the Android companion app that displays
 
 - Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
 - Android app: `./gradlew --no-daemon assembleDebug` — BUILD SUCCESSFUL
+
+---
+
+## #4 — Background Communication: launch apps from Pebble when companion is in background
+
+### Overview
+
+Implemented the ability to launch smartphone applications from the Pebble watch even when the pLauncher companion app is in background, minimized, or not visible. Previously, launches only worked when pLauncher was in the foreground. Includes an iterative fix for permission state refresh after returning from system settings.
+
+### Problem Analysis
+
+The original architecture relied on `LauncherActivity` (started from `CrashApplication.onCreate()`) with a code-registered `BroadcastReceiver` to intercept `LAUNCH_APP` broadcasts from `PebbleListenerService`. This failed in background because:
+
+1. **Activity destruction**: When `MainActivity` went to background, `LauncherActivity` could be destroyed by the system, taking its registered receiver with it.
+2. **Broadcast delivery blocked**: Android 13 blocks delivery of custom broadcasts to manifest-registered receivers when the app is in background (`BroadcastQueue: Background execution not allowed`).
+3. **`startActivity` from background**: Android prevents background services from calling `startActivity()` without `SYSTEM_ALERT_WINDOW` (Draw Over Other Apps) permission.
+
+### Solution Architecture
+
+The solution replaces the broadcast-based approach with a direct service-to-activity launch chain, backed by foreground service and special permissions:
+
+```
+[Pebble watch sends Launch App]
+        |
+        v
+[PebbleListenerService.onMessageReceived() — foreground service, always alive]
+        |
+        v (direct startActivity, no broadcast)
+[LaunchActivity — transparent, singleInstance, no UI]
+        |
+        v (startActivity for target app)
+[Target app launches]
+        |
+        v (immediate finish)
+[LaunchActivity destroyed, leaves no trace]
+```
+
+### Android Companion App (`apk/`) — ~261 lines Kotlin, 2 new source files
+
+#### New Files
+
+| File | Lines | Purpose |
+|---|---|---|
+| `PebbleListenerService` (upgraded) | 163 (+80) | Converted from plain `BasePebbleListenerService` to **foreground service**: notification channel, `startForeground()` with persistent notification (status: "Waiting for Pebble..." / "Connected" / "Disconnected — waiting..."), `PARTIAL_WAKE_LOCK` to prevent CPU sleep during watch sessions, notification updates on connect/disconnect/launch |
+| `LaunchActivity.kt` | 17 | Transparent `singleInstance` `ComponentActivity` that receives `package_name`, resolves the launch intent via `PackageManager`, starts the target app, then immediately calls `finish()`. Uses `Theme.Translucent.NoTitleBar`, separate `taskAffinity`, `excludeFromRecents=true`. No UI rendered. |
+| `BootReceiver.kt` | 15 | Manifest-registered `BroadcastReceiver` for `BOOT_COMPLETED`. Restarts `PebbleListenerService` via `ContextCompat.startForegroundService()` after device reboot, ensuring the service is available before the Pebble app re-binds. |
+
+#### Modified Files
+
+| File | Lines | Changes |
+|---|---|---|
+| `AndroidManifest.xml` | +21 | Added 6 permissions (`WAKE_LOCK`, `FOREGROUND_SERVICE`, `POST_NOTIFICATIONS`, `SYSTEM_ALERT_WINDOW`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, `RECEIVE_BOOT_COMPLETED`). Registered `LaunchActivity` (transparent, singleInstance, separate taskAffinity). Registered `BootReceiver` with `BOOT_COMPLETED` filter. Added `foregroundServiceType="dataSync"` to service. |
+| `PebbleListenerService.kt` | +80 | Added foreground service infrastructure: notification channel creation, `startForeground()` in `onCreate()`, `stopForeground()` in `onDestroy()`, `PARTIAL_WAKE_LOCK` management (acquire on connect, release on disconnect), notification status updates. Changed `handleLaunchApp()` to start `LaunchActivity` directly instead of sending a broadcast. |
+| `MainActivity.kt` | +69 | Added permission state tracking with `resumeCounter` pattern in `AppViewModel` for reactive recomposition. Added startup `AlertDialog` prompting user to grant special permissions. Added `onResume()` to trigger permission re-check after returning from settings. Added `try-catch` around `senderHelper.close()` in `onDestroy()`. Removed `LauncherActivity` startup from app lifecycle. |
+| `SettingsScreen.kt` | +74 | Added "Background Launch Permissions" section with two `ListItem` entries: "Draw Over Other Apps" and "Ignore Battery Optimizations", each showing "Granted" status or "Grant" button that opens the corresponding system settings. Added `checkCanDrawOverlays()` and `checkIgnoringBatteryOptimizations()` helper functions. Permission states passed as parameters from `MainActivity` for reactive updates. |
+| `CrashApplication.kt` | -2 | Removed `LauncherActivity` startup code (no longer needed). |
+
+#### Removed Files
+
+| File | Reason |
+|---|---|
+| `LauncherActivity.kt` (original) | Initially replaced by a manifest-registered `LaunchReceiver`, then fully replaced by direct service-to-`LaunchActivity` approach after discovering Android blocks broadcast delivery in background |
+
+#### Key Implementation Details
+
+**Foreground Service**: `PebbleListenerService` now calls `startForeground()` with a persistent notification in `onCreate()`. This serves two purposes: (1) keeps the service alive even when the companion app is not in the foreground (Android won't kill foreground services), and (2) provides the user with a visible indicator of Pebble connection status. The notification has `PRIORITY_LOW`, no sound/vibration, and taps to open `MainActivity`.
+
+**Wake Lock**: A `PARTIAL_WAKE_LOCK` prevents the CPU from sleeping while the watch is connected. Acquired when `handleWatchWelcome()` fires (watch connects), released in `onAppClosed()` and `onDestroy()`. Uses `setReferenceCounted(false)` for simple acquire/release semantics.
+
+**Transparent Launch Activity**: `LaunchActivity` uses `singleInstance` launch mode with a unique `taskAffinity` so it doesn't interfere with either the pLauncher task or the target app's task. It's themed `Theme.Translucent.NoTitleBar` so no UI flicker is visible. After starting the target app, it calls `finish()` immediately. The `SYSTEM_ALERT_WINDOW` permission classifies the app as a "special access utility", allowing `startActivity()` from the foreground service context.
+
+**Permission State Management**: Permission states (`canDrawOverlays`, `ignoringBatteryOpt`) are managed in `MainActivity` using a `resumeCounter` pattern: `AppViewModel` holds a `MutableStateFlow<Int>` that increments on `onResume()`. The composable uses `remember(resumeCounter) { mutableStateOf(...) }` so the values re-evaluate each time the activity resumes (e.g., after returning from system settings). The states are passed as parameters to `SettingsScreen` for reactive updates.
+
+**Startup Permission Dialog**: On first launch (or if permissions are missing), an `AlertDialog` appears explaining that "Draw Over Other Apps" and "Ignore Battery Optimizations" are needed for background launch functionality. The dialog has "Open Settings" (opens overlay permission settings) and "Dismiss" buttons. The dialog re-evaluates on each `onResume()`.
+
+**Boot Recovery**: `BootReceiver` listens for `BOOT_COMPLETED` and restarts `PebbleListenerService` as a foreground service. This ensures the service is ready when the Pebble app re-establishes its binding after a device reboot. The PebbleKit2 binding mechanism then takes over normally.
+
+#### Debugging Discovery
+
+The initial implementation used a `BroadcastReceiver` (`LaunchReceiver`) registered in the manifest to catch `LAUNCH_APP` broadcasts. Testing revealed Android 13 blocks delivery of custom broadcasts to background apps (`BroadcastQueue: Background execution not allowed`). The fix was to have `PebbleListenerService` start `LaunchActivity` directly via `startActivity()`, bypassing the broadcast entirely. The foreground service status ensures the `startActivity()` call is allowed.
+
+#### Permissions Added
+
+| Permission | Purpose |
+|---|---|
+| `SYSTEM_ALERT_WINDOW` | Classifies app as special access utility, allows `startActivity()` from foreground service |
+| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | Prevents aggressive service killing by battery optimization |
+| `RECEIVE_BOOT_COMPLETED` | Allows `BootReceiver` to restart service after reboot |
+| `WAKE_LOCK` | Allows partial wake lock to keep CPU awake during watch sessions |
+| `FOREGROUND_SERVICE` | Required for foreground service on Android 8+ |
+| `POST_NOTIFICATIONS` | Required for foreground service notification on Android 13+ |
+
+#### Code Statistics
+
+| Component | Files | Lines |
+|---|---|---|
+| Watch App (C) | 12 | 519 (unchanged) |
+| Android App (Kotlin) | 12 | 1112 (831 existing + 281 new/changed) |
+| **Total** | **24** | **1631** |
+
+#### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
+- Android app: `./gradlew --no-daemon assembleDebug` — BUILD SUCCESSFUL
