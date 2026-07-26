@@ -7,5 +7,6 @@ void packets_init(void);
 void packets_deinit(void);
 void send_watch_welcome(void);
 void send_launch_app(uint8_t index);
+void request_app_list(void);
 
 #endif

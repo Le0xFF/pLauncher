@@ -1,6 +1,7 @@
 #include "window_main.h"
 #include "app_list.h"
 #include "window_main_click.h"
+#include "packets.h"
 #include "strings.h"
 #include "layout.h"
 #include <string.h>
@@ -74,13 +75,22 @@ static void window_unload(Window* window) {
     text_layer_destroy(s_index_layer);
 }
 
+static void window_appear(Window* window) {
+    request_app_list();
+}
+
 Window* window_main_create(void) {
     s_window = window_create();
     window_set_window_handlers(s_window, (WindowHandlers) {
         .load = window_load,
+        .appear = window_appear,
         .unload = window_unload,
     });
     window_main_update_display();
+    return s_window;
+}
+
+Window* window_main_get_window(void) {
     return s_window;
 }
 

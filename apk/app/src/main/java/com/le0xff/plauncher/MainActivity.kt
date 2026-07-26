@@ -214,9 +214,12 @@ class MainActivity : ComponentActivity() {
                                 dataStore.saveApps(selectedApps)
                                 viewModel.setApps(selectedApps)
                                 viewModel.setShowPicker(false)
+                                // Push updated list to watch using MainActivity's own sender
                                 coroutineScope.launch {
                                     senderHelper.sendAppList(selectedApps, null)
                                 }
+                                // Also notify PebbleListenerService if it is running
+                                sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                             }
                         )
                     }

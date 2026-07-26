@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+static bool s_waiting_for_response = false;
+static AppTimer* s_response_timer = NULL;
+
 static void outbound_sent_handler(DictionaryIterator* iter, void* context) {
 }
 
@@ -11,7 +14,19 @@ static void outbound_failed_handler(DictionaryIterator* iter, AppMessageResult r
     APP_LOG(APP_LOG_LEVEL_ERROR, "Outbound failure: %d", (int)reason);
 }
 
+static void response_timeout_handler(void* context) {
+    s_waiting_for_response = false;
+    s_response_timer = NULL;
+    APP_LOG(APP_LOG_LEVEL_INFO, "Response timeout, ready to retry");
+}
+
 static void handle_phone_welcome(DictionaryIterator* iter) {
+    if (s_response_timer) {
+        app_timer_cancel(s_response_timer);
+        s_response_timer = NULL;
+    }
+    s_waiting_for_response = false;
+
     Tuple* t = dict_find(iter, 1);
     if (t) {
         uint16_t version = t->value->uint16;
@@ -86,6 +101,14 @@ void packets_init(void) {
 
 void packets_deinit(void) {
     app_message_deregister_callbacks();
+}
+
+void request_app_list(void) {
+    if (!s_waiting_for_response) {
+        s_waiting_for_response = true;
+        send_watch_welcome();
+        s_response_timer = app_timer_register(10 * 1000, response_timeout_handler, NULL);
+    }
 }
 
 void send_watch_welcome(void) {

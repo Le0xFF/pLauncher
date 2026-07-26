@@ -9,7 +9,6 @@ static void init(void) {
     Window* window = window_main_create();
     bool animated = true;
     window_stack_push(window, animated);
-    send_watch_welcome();
 }
 
 static void deinit(void) {
