@@ -46,6 +46,13 @@ See `COMMUNICATION_PROTOCOL.md` for the AppMessage dictionary keys and packet ty
 
 See `COMPILE_INSTRUCTIONS.md` for detailed build steps, prerequisites, and troubleshooting.
 
+## String resources
+
+- All user-visible strings must be externalized, never hardcoded.
+- **Android companion app (`apk/`)**: every string must be defined as a `<string>` entry in `app/src/main/res/values/strings.xml` and referenced via `stringResource(R.string.name)` (Compose) or `context.getString(R.string.name)` (non-Compose).
+- **Pebble watch app (`pbw/`)**: every string must be defined as a `#define` or `const` in a dedicated header and referenced from the source code.
+- All strings must be written in **English** regardless of the developer's language.
+
 ## Development rules
 
 - One feature per subagent
