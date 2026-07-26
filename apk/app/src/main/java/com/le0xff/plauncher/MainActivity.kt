@@ -1,6 +1,9 @@
 package com.le0xff.plauncher
 
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -18,6 +21,8 @@ import com.le0xff.plauncher.model.LaunchApp
 import com.le0xff.plauncher.ui.AppPickerDialog
 import com.le0xff.plauncher.ui.AppScreen
 import com.le0xff.plauncher.ui.SettingsScreen
+import com.le0xff.plauncher.ui.checkCanDrawOverlays
+import com.le0xff.plauncher.ui.checkIgnoringBatteryOptimizations
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +49,9 @@ class AppViewModel : ViewModel() {
     private val _connectionStatus = MutableStateFlow("Disconnected")
     val connectionStatus: StateFlow<String> = _connectionStatus.asStateFlow()
 
+    private val _resumeCounter = MutableStateFlow(0)
+    val resumeCounter: StateFlow<Int> = _resumeCounter.asStateFlow()
+
     fun setApps(newApps: List<LaunchApp>) {
         _apps.value = newApps
     }
@@ -66,6 +74,10 @@ class AppViewModel : ViewModel() {
 
     fun setConnectionStatus(status: String) {
         _connectionStatus.value = status
+    }
+
+    fun onActivityResume() {
+        _resumeCounter.value++
     }
 }
 
@@ -91,6 +103,7 @@ class MainActivity : ComponentActivity() {
                 val showPicker by viewModel.showPicker.collectAsState()
                 val searchQuery by viewModel.searchQuery.collectAsState()
                 val connectionStatus by viewModel.connectionStatus.collectAsState()
+                val resumeCounter by viewModel.resumeCounter.collectAsState()
 
                 LaunchedEffect(Unit) {
                     viewModel.setApps(dataStore.apps.value)
@@ -99,6 +112,50 @@ class MainActivity : ComponentActivity() {
                 }
 
                 var selectedTab by remember { mutableStateOf(0) }
+
+                val canDrawOverlays = remember(resumeCounter) {
+                    mutableStateOf(checkCanDrawOverlays(this))
+                }
+                val ignoringBatteryOpt = remember(resumeCounter) {
+                    mutableStateOf(checkIgnoringBatteryOptimizations(this))
+                }
+
+                var showPermissionDialog by remember { mutableStateOf(!canDrawOverlays.value || !ignoringBatteryOpt.value) }
+
+                if (showPermissionDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showPermissionDialog = false },
+                        title = { Text("Background Launch Permissions") },
+                        text = {
+                            Column {
+                                Text("To launch apps from Pebble when this app is in background, you need to grant special permissions:")
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("• Draw Over Other Apps")
+                                Text("• Ignore Battery Optimizations")
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("You can also grant these from the Settings tab.")
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                    val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                                        data = android.net.Uri.parse("package:${packageName}")
+                                    }
+                                    startActivity(intent)
+                                }
+                                showPermissionDialog = false
+                            }) {
+                                Text("Open Settings")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showPermissionDialog = false }) {
+                                Text("Dismiss")
+                            }
+                        }
+                    )
+                }
 
                 Scaffold(
                     bottomBar = {
@@ -138,6 +195,8 @@ class MainActivity : ComponentActivity() {
                                 viewModel.setGenerateCrashReports(it)
                                 dataStore.setGenerateCrashReports(it)
                             },
+                            canDrawOverlays = canDrawOverlays.value,
+                            ignoringBatteryOpt = ignoringBatteryOpt.value,
                             modifier = Modifier.padding(padding)
                         )
                     }
@@ -162,8 +221,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        viewModel.onActivityResume()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        senderHelper.close()
+        try {
+            senderHelper.close()
+        } catch (e: Exception) {
+            // Ignore if sender was already closed
+        }
     }
 }
