@@ -29,7 +29,11 @@ class AppDataStore(private val context: Context) {
 
     fun saveApps(apps: List<LaunchApp>) {
         _apps.value = apps
-        prefs.edit().putString(KEY_APPS, apps.joinToString(LINE_SEP) { "${it.packageName}$SEP${it.displayName}" }).apply()
+        prefs.edit().putString(KEY_APPS, apps.joinToString(LINE_SEP) { "${it.packageName}$SEP${it.displayName}" }).commit()
+    }
+
+    fun reloadApps() {
+        _apps.value = loadApps()
     }
 
     fun getShowSystemApps(): Boolean = _showSystemApps.value

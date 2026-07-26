@@ -3,13 +3,16 @@ package com.le0xff.plauncher
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.le0xff.plauncher.R
 import com.le0xff.plauncher.data.AppDataStore
+import com.le0xff.plauncher.model.LaunchApp
 import io.rebble.pebblekit2.client.BasePebbleListenerService
 import io.rebble.pebblekit2.common.model.PebbleDictionary
 import io.rebble.pebblekit2.common.model.PebbleDictionaryItem
@@ -26,12 +29,25 @@ class PebbleListenerService : BasePebbleListenerService() {
     companion object {
         private const val CHANNEL_ID = "pebble_connection"
         private const val NOTIFICATION_ID = 27
+        const val ACTION_SEND_APP_LIST = "com.le0xff.plauncher.SEND_APP_LIST"
     }
 
     private var senderHelper: PebbleSenderHelper? = null
     private var dataStore: AppDataStore? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var notificationManager: NotificationManager
+
+    private val updateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            coroutineScope.launch {
+                senderHelper?.let { helper ->
+                    dataStore?.reloadApps()
+                    val apps = dataStore?.apps?.value ?: emptyList()
+                    helper.sendAppList(apps, null)
+                }
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -44,6 +60,9 @@ class PebbleListenerService : BasePebbleListenerService() {
             PowerManager.PARTIAL_WAKE_LOCK,
             applicationContext.getString(R.string.wakelock_tag)
         ).apply { setReferenceCounted(false) }
+
+        val filter = IntentFilter(ACTION_SEND_APP_LIST)
+        registerReceiver(updateReceiver, filter)
 
         createChannel()
         startForeground(NOTIFICATION_ID, buildNotification(applicationContext.getString(R.string.notif_waiting)))
@@ -61,6 +80,11 @@ class PebbleListenerService : BasePebbleListenerService() {
     }
 
     override fun onDestroy() {
+        try {
+            unregisterReceiver(updateReceiver)
+        } catch (e: IllegalArgumentException) {
+            // Receiver not registered
+        }
         wakeLock?.let { if (it.isHeld) it.release() }
         stopForeground(false)
         senderHelper?.close()
@@ -91,6 +115,7 @@ class PebbleListenerService : BasePebbleListenerService() {
     private suspend fun handleWatchWelcome(watch: WatchIdentifier): ReceiveResult {
         senderHelper?.let { helper ->
             helper.sendWelcome(watch)
+            dataStore?.reloadApps()
             val apps = dataStore?.apps?.value ?: emptyList()
             helper.sendAppList(apps, watch)
         }
@@ -107,6 +132,7 @@ class PebbleListenerService : BasePebbleListenerService() {
             else -> return ReceiveResult.Nack
         }
 
+        dataStore?.reloadApps()
         val apps = dataStore?.apps?.value ?: emptyList()
         if (index >= 0 && index < apps.size) {
             val app = apps[index]
@@ -122,13 +148,7 @@ class PebbleListenerService : BasePebbleListenerService() {
     }
 
     override fun onAppOpened(watchappUUID: UUID, watch: WatchIdentifier) {
-        coroutineScope.launch {
-            senderHelper?.let { helper ->
-                helper.sendWelcome(watch)
-                val apps = dataStore?.apps?.value ?: emptyList()
-                helper.sendAppList(apps, watch)
-            }
-        }
+        // No action: watch sends WatchWelcome; companion responds in handleWatchWelcome()
     }
 
     override fun onAppClosed(watchappUUID: UUID, watch: WatchIdentifier) {

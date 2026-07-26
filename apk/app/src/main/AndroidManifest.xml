@@ -57,6 +57,9 @@
             <intent-filter>
                 <action android:name="io.rebble.pebblekit2.RECEIVE_DATA_FROM_WATCH" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="com.le0xff.plauncher.SEND_APP_LIST" />
+            </intent-filter>
         </service>
 
         <receiver android:name=".BootReceiver" android:exported="true">

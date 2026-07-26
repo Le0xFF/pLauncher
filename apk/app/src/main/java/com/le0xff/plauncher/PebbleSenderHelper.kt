@@ -69,6 +69,12 @@ class PebbleSenderHelper(context: Context) {
     }
 
     fun close() {
-        sender.close()
+        try {
+            sender.close()
+        } catch (e: IllegalArgumentException) {
+            // PebbleKit2 bug: DefaultPebbleSender.close() is not idempotent.
+            // onBindingDied() may already have unbound the service, causing
+            // a second close() to throw "Service not registered".
+        }
     }
 }
