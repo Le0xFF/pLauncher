@@ -366,3 +366,102 @@ The initial implementation used a `BroadcastReceiver` (`LaunchReceiver`) registe
 
 - Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
 - Android app: `./gradlew --no-daemon assembleDebug` — BUILD SUCCESSFUL
+
+---
+
+## #5 — Watch-Companion Sync Fix: app list refresh, PebbleKit2 crash, data store consistency
+
+### Overview
+
+Fixed three interrelated issues that prevented the watch app from showing or launching apps correctly on first use:
+
+1. **Stale app list on watch**: The watch only requested the app list at initial `init()`. If the user opened the watch app before configuring the companion, or navigated away and back, the watch never refreshed the list.
+2. **PebbleKit2 crash on `close()`**: `DefaultPebbleSender.close()` is not idempotent — calling it after `onBindingDied()` already unbound the service threw `IllegalArgumentException: Service not registered`, crashing the companion app on teardown.
+3. **Data store inconsistency between components**: `MainActivity` and `PebbleListenerService` each had their own `AppDataStore` instance with separate `StateFlow` caches. When `MainActivity` saved apps, the service's cache remained stale, causing `handleLaunchApp()` to look up indices in an empty list.
+
+### Root Cause Analysis
+
+**Race condition in app list delivery**: The original `onAppOpened()` callback in `PebbleListenerService` proactively sent `sendWelcome()` + `sendAppList()`. Simultaneously, the watch's `init()` also sent `send_watch_welcome()` (packet type 0), triggering `handleWatchWelcome()` which also sent the list. Two overlapping triggers caused the watch to receive duplicate or interleaved app list messages, corrupting the local state.
+
+**Missing refresh on app return**: The watch's `send_watch_welcome()` was only called in `init()` (first launch). On Re-Pebble, when the user navigates away and returns to the app, `main()`/`init()` are not re-called. Without a refresh trigger, the watch kept showing stale data.
+
+**PebbleKit2 double-close bug**: Decompile of `DefaultPebbleSender` revealed that `close()` unconditionally calls `context.unbindService(connection)` with no idempotency guard. When Android calls `onBindingDied()` (e.g., Pebble service crash), it triggers `close()` internally. A subsequent explicit `close()` from `onDestroy()` then throws.
+
+**SharedPreferences async write**: `prefs.edit().apply()` writes asynchronously. When `PebbleListenerService` called `reloadApps()` to read prefs, the `MainActivity`'s `apply()` write might not have committed yet, resulting in stale reads.
+
+### Watch App (`pbw/`) — 5 files modified
+
+**`pLauncher.c`**: Removed `send_watch_welcome()` from `init()`. The watch no longer sends welcome at init — it now relies on the `.appear` handler which fires both on first push and on every return from background.
+
+**`packets.c`** / **`packets.h`**: Added `request_app_list()` function with anti-duplicate and timeout logic:
+- `s_waiting_for_response` flag prevents double sends during the same response cycle
+- `s_response_timer` starts a 10-second timeout on each request
+- `response_timeout_handler()` resets the flag if the companion doesn't respond, allowing retry on next `appeared`
+- `handle_phone_welcome()` cancels the timer and resets the flag on successful response
+- Exported `request_app_list()` in header for use by `window_main.c`
+
+**`window_main.c`** / **`window_main.h`**: Added `window_appear` handler registered in `WindowHandlers.appear`. This fires when the window becomes visible — both on first push and on every return from background. The handler calls `request_app_list()` to fetch the latest app list. Also added `window_main_get_window()` accessor and `packets.h` include.
+
+### Android Companion App (`apk/`) — 5 files modified
+
+**`PebbleListenerService.kt`**:
+- Removed proactive sending from `onAppOpened()` — now empty. The watch drives the sync via `request_app_list()` → `send_watch_welcome()` → `handleWatchWelcome()`.
+- Added `BroadcastReceiver` for `ACTION_SEND_APP_LIST` — listens for broadcasts from `MainActivity` when the user saves apps. On receipt, reloads from prefs and sends the updated list to all watches.
+- Added `reloadApps()` calls before reading `apps?.value` in both `handleWatchWelcome()` and `handleLaunchApp()` — ensures the service always reads the latest data from SharedPreferences, not a stale cache.
+- Registered/unregistered the broadcast receiver in `onCreate()`/`onDestroy()`.
+
+**`MainActivity.kt`**: When the user confirms app selection, now performs dual delivery:
+1. Direct send via its own `PebbleSenderHelper.sendAppList()` — reaches the watch immediately regardless of service state
+2. Broadcast to `PebbleListenerService` — if the service is running, it also sends the list using its stable connection
+
+**`PebbleSenderHelper.kt`**: Wrapped `close()` in try-catch for `IllegalArgumentException` to handle PebbleKit2's non-idempotent `DefaultPebbleSender.close()`.
+
+**`data/AppDataStore.kt`**:
+- Changed `saveApps()` from `apply()` to `commit()` — ensures synchronous write to SharedPreferences so `reloadApps()` in other components reads committed data
+- Added `reloadApps()` method — re-reads apps from prefs and updates the `StateFlow`
+
+**`AndroidManifest.xml`**: Added intent-filter for `com.le0xff.plauncher.SEND_APP_LIST` action on `PebbleListenerService`.
+
+### New Communication Flow
+
+```
+[Watch app opens / returns from background]
+        |
+        v
+[window.appear → request_app_list() → sends WatchWelcome (type 0)]
+        |
+        v
+[PebbleListenerService.handleWatchWelcome()]
+        |
+        v (reloadApps → read latest from prefs)
+[Send PhoneWelcome (type 10) + AppList (type 11) to watch]
+        |
+        v
+[Watch receives list → displays apps → timer cancelled, flag reset]
+```
+
+```
+[User saves apps in MainActivity]
+        |
+        +──→ [Direct sendAppList via MainActivity's PebbleSenderHelper] ──→ Watch receives list
+        |
+        +──→ [Broadcast ACTION_SEND_APP_LIST] ──→ PebbleListenerService receives → reloadApps → sendAppList to watch
+```
+
+```
+[User presses SELECT on watch]
+        |
+        v
+[Watch sends Launch App (type 1) with index]
+        |
+        v
+[PebbleListenerService.handleLaunchApp()]
+        |
+        v (reloadApps → read latest from prefs → commit() ensures data is current)
+[Look up app by index → start LaunchActivity → target app launches]
+```
+
+### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery`
+- Android app: `./gradlew --no-daemon assembleDebug` — BUILD SUCCESSFUL
