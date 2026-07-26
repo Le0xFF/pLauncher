@@ -12,7 +12,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.le0xff.plauncher.R
 import com.le0xff.plauncher.model.LaunchApp
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
@@ -46,13 +48,13 @@ fun AppPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Pick Apps") },
+        title = { Text(stringResource(R.string.picker_title)) },
         text = {
             Column(modifier = Modifier.height(400.dp)) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search...") },
+                    placeholder = { Text(stringResource(R.string.placeholder_search)) },
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                     singleLine = true
                 )
@@ -89,12 +91,12 @@ fun AppPickerDialog(
                 }
                 onConfirm(result)
             }) {
-                Text("Done")
+                Text(stringResource(R.string.button_done))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.button_cancel))
             }
         }
     )

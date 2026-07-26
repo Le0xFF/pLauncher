@@ -15,7 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.le0xff.plauncher.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 class CrashReportActivity : ComponentActivity() {
@@ -29,7 +31,7 @@ class CrashReportActivity : ComponentActivity() {
             MaterialTheme {
                 Scaffold(
                     topBar = {
-                        TopAppBar(title = { Text("pLauncher has crashed") })
+                        TopAppBar(title = { Text(stringResource(R.string.crash_title)) })
                     }
                 ) { padding ->
                     Column(Modifier.padding(padding)) {
@@ -44,20 +46,20 @@ class CrashReportActivity : ComponentActivity() {
                                     .padding(16.dp)
                             ) {
                                 Text(
-                                    text = "Exception: ${parsed.exception}",
+                                    text = "${stringResource(R.string.crash_label_exception)}${parsed.exception}",
                                     style = MaterialTheme.typography.headlineSmall,
                                     color = MaterialTheme.colorScheme.error
                                 )
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    text = "Message: ${parsed.message}",
+                                    text = "${stringResource(R.string.crash_label_message)}${parsed.message}",
                                     style = MaterialTheme.typography.bodyLarge
                                 )
                                 Spacer(Modifier.height(16.dp))
                                 Divider()
                                 Spacer(Modifier.height(16.dp))
                                 Text(
-                                    text = "Stack Trace:",
+                                    text = stringResource(R.string.crash_label_stacktrace),
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                                 Spacer(Modifier.height(8.dp))
@@ -78,7 +80,7 @@ class CrashReportActivity : ComponentActivity() {
                                 Divider()
                                 Spacer(Modifier.height(16.dp))
                                 Text(
-                                    text = "Device Info",
+                                    text = stringResource(R.string.crash_label_device_info),
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                                 Spacer(Modifier.height(8.dp))
@@ -95,7 +97,7 @@ class CrashReportActivity : ComponentActivity() {
                                 modifier = Modifier.weight(1f).fillMaxWidth(),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("An unexpected error occurred")
+                                Text(stringResource(R.string.crash_unexpected_error))
                             }
                         }
 
@@ -114,7 +116,7 @@ class CrashReportActivity : ComponentActivity() {
                                 },
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("Restart App")
+                                Text(stringResource(R.string.button_restart_app))
                             }
 
                             OutlinedButton(
@@ -123,7 +125,7 @@ class CrashReportActivity : ComponentActivity() {
                                 },
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("Close App")
+                                Text(stringResource(R.string.button_close_app))
                             }
                         }
                     }
@@ -141,13 +143,19 @@ class CrashReportActivity : ComponentActivity() {
 
     private fun parseCrashReport(report: String): ParsedCrashReport {
         val lines = report.lines()
-        val exception = lines.firstOrNull { it.startsWith("Exception:") }
-            ?.substringAfter("Exception:")?.trim() ?: "Unknown"
-        val message = lines.firstOrNull { it.startsWith("Message:") }
-            ?.substringAfter("Message:")?.trim() ?: "No message"
+        val labelException = getString(R.string.report_label_exception)
+        val labelMessage = getString(R.string.report_label_message)
+        val noMessage = getString(R.string.report_no_message)
+        val labelStacktrace = getString(R.string.report_label_stacktrace)
+        val labelDevice = getString(R.string.report_label_device)
 
-        val stackTraceStart = lines.indexOfFirst { it == "Stack Trace:" }
-        val deviceStart = lines.indexOfFirst { it.startsWith("Device:") }
+        val exception = lines.firstOrNull { it.startsWith(labelException) }
+            ?.substringAfter(labelException)?.trim() ?: "Unknown"
+        val message = lines.firstOrNull { it.startsWith(labelMessage) }
+            ?.substringAfter(labelMessage)?.trim() ?: noMessage
+
+        val stackTraceStart = lines.indexOfFirst { it == labelStacktrace }
+        val deviceStart = lines.indexOfFirst { it.startsWith(labelDevice) }
 
         val stackTraceLines = if (stackTraceStart >= 0 && deviceStart > stackTraceStart) {
             lines.subList(stackTraceStart + 1, deviceStart).filter { it.isNotBlank() }

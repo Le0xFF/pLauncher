@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import com.le0xff.plauncher.data.AppDataStore
@@ -21,6 +22,7 @@ import com.le0xff.plauncher.model.LaunchApp
 import com.le0xff.plauncher.ui.AppPickerDialog
 import com.le0xff.plauncher.ui.AppScreen
 import com.le0xff.plauncher.ui.SettingsScreen
+import com.le0xff.plauncher.R
 import com.le0xff.plauncher.ui.checkCanDrawOverlays
 import com.le0xff.plauncher.ui.checkIgnoringBatteryOptimizations
 import kotlinx.coroutines.CoroutineScope
@@ -46,7 +48,7 @@ class AppViewModel : ViewModel() {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _connectionStatus = MutableStateFlow("Disconnected")
+    private val _connectionStatus = MutableStateFlow("")
     val connectionStatus: StateFlow<String> = _connectionStatus.asStateFlow()
 
     private val _resumeCounter = MutableStateFlow(0)
@@ -105,10 +107,12 @@ class MainActivity : ComponentActivity() {
                 val connectionStatus by viewModel.connectionStatus.collectAsState()
                 val resumeCounter by viewModel.resumeCounter.collectAsState()
 
+                val initialStatus = stringResource(R.string.status_disconnected)
                 LaunchedEffect(Unit) {
                     viewModel.setApps(dataStore.apps.value)
                     viewModel.setShowSystemApps(dataStore.getShowSystemApps())
                     viewModel.setGenerateCrashReports(dataStore.getGenerateCrashReports())
+                    viewModel.setConnectionStatus(initialStatus)
                 }
 
                 var selectedTab by remember { mutableStateOf(0) }
@@ -125,15 +129,15 @@ class MainActivity : ComponentActivity() {
                 if (showPermissionDialog) {
                     AlertDialog(
                         onDismissRequest = { showPermissionDialog = false },
-                        title = { Text("Background Launch Permissions") },
+                        title = { Text(stringResource(R.string.perm_dialog_title)) },
                         text = {
                             Column {
-                                Text("To launch apps from Pebble when this app is in background, you need to grant special permissions:")
+                                Text(stringResource(R.string.perm_dialog_text))
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text("• Draw Over Other Apps")
-                                Text("• Ignore Battery Optimizations")
+                                Text(stringResource(R.string.perm_draw_overlays))
+                                Text(stringResource(R.string.perm_ignore_battery))
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text("You can also grant these from the Settings tab.")
+                                Text(stringResource(R.string.perm_dialog_settings_hint))
                             }
                         },
                         confirmButton = {
@@ -146,12 +150,12 @@ class MainActivity : ComponentActivity() {
                                 }
                                 showPermissionDialog = false
                             }) {
-                                Text("Open Settings")
+                                Text(stringResource(R.string.button_open_settings))
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = { showPermissionDialog = false }) {
-                                Text("Dismiss")
+                                Text(stringResource(R.string.button_dismiss))
                             }
                         }
                     )
@@ -161,16 +165,16 @@ class MainActivity : ComponentActivity() {
                     bottomBar = {
                         NavigationBar {
                             NavigationBarItem(
-                                icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Apps") },
+                                icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = stringResource(R.string.tab_apps)) },
                                 selected = selectedTab == 0,
                                 onClick = { selectedTab = 0 },
-                                label = { Text("Apps") }
+                                label = { Text(stringResource(R.string.tab_apps)) }
                             )
                             NavigationBarItem(
-                                icon = { Icon(Icons.Filled.Settings, contentDescription = "Settings") },
+                                icon = { Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.tab_settings)) },
                                 selected = selectedTab == 1,
                                 onClick = { selectedTab = 1 },
-                                label = { Text("Settings") }
+                                label = { Text(stringResource(R.string.tab_settings)) }
                             )
                         }
                     }

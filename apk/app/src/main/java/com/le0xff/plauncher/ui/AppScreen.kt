@@ -7,7 +7,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.le0xff.plauncher.R
 import com.le0xff.plauncher.model.LaunchApp
 
 @Composable
@@ -26,7 +28,7 @@ fun AppScreen(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQueryChange,
-            placeholder = { Text("Search...") },
+            placeholder = { Text(stringResource(R.string.placeholder_search)) },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
@@ -38,7 +40,7 @@ fun AppScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                Text(if (apps.isEmpty()) "No apps configured. Tap + to add apps." else "No matching apps.", style = MaterialTheme.typography.bodyMedium)
+                Text(if (apps.isEmpty()) stringResource(R.string.appscreen_empty) else stringResource(R.string.appscreen_no_match), style = MaterialTheme.typography.bodyMedium)
             }
         } else {
             LazyColumn(modifier = Modifier.weight(1f)) {
@@ -57,7 +59,7 @@ fun AppScreen(
                 .align(Alignment.End)
                 .padding(16.dp)
         ) {
-            Text("+")
+            Text(stringResource(R.string.button_add_app))
         }
     }
 }
