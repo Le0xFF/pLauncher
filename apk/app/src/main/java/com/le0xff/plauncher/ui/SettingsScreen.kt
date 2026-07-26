@@ -5,10 +5,25 @@ import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -25,42 +40,68 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var generalExpanded by remember { mutableStateOf(false) }
+    var permissionsExpanded by remember { mutableStateOf(false) }
 
-    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
+    Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        ListItem(
-            headlineContent = { Text(stringResource(R.string.settings_show_system_apps)) },
-            trailingContent = {
+        AccordionCard(
+            title = stringResource(R.string.settings_section_general),
+            expanded = generalExpanded,
+            onExpandedChange = { generalExpanded = it }
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_show_system_apps),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f)
+                )
                 Switch(checked = showSystemApps, onCheckedChange = onShowSystemAppsChange)
             }
-        )
 
-        Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider()
 
-        ListItem(
-            headlineContent = { Text(stringResource(R.string.settings_generate_crash_reports)) },
-            supportingContent = { Text(stringResource(R.string.settings_crash_reports_desc)) },
-            trailingContent = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = stringResource(R.string.settings_generate_crash_reports), style = MaterialTheme.typography.bodyLarge)
+                    Text(text = stringResource(R.string.settings_crash_reports_desc), style = MaterialTheme.typography.bodySmall)
+                }
                 Switch(checked = generateCrashReports, onCheckedChange = onGenerateCrashReportsChange)
             }
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(stringResource(R.string.settings_perm_section_title), style = MaterialTheme.typography.titleMedium)
-        Text(stringResource(R.string.settings_perm_section_desc), style = MaterialTheme.typography.bodySmall)
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        ListItem(
-            headlineContent = { Text(stringResource(R.string.settings_draw_overlays)) },
-            supportingContent = { Text(stringResource(R.string.settings_draw_overlays_desc)) },
-            trailingContent = {
+        AccordionCard(
+            title = stringResource(R.string.settings_section_permissions),
+            expanded = permissionsExpanded,
+            onExpandedChange = { permissionsExpanded = it }
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = stringResource(R.string.settings_draw_overlays), style = MaterialTheme.typography.bodyLarge)
+                    Text(text = stringResource(R.string.settings_draw_overlays_desc), style = MaterialTheme.typography.bodySmall)
+                }
                 if (canDrawOverlays) {
-                    Text(stringResource(R.string.settings_granted))
+                    Text(text = stringResource(R.string.settings_granted))
                 } else {
                     Button(onClick = {
                         val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
@@ -72,16 +113,21 @@ fun SettingsScreen(
                     }
                 }
             }
-        )
 
-        Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider()
 
-        ListItem(
-            headlineContent = { Text(stringResource(R.string.settings_ignore_battery)) },
-            supportingContent = { Text(stringResource(R.string.settings_ignore_battery_desc)) },
-            trailingContent = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = stringResource(R.string.settings_ignore_battery), style = MaterialTheme.typography.bodyLarge)
+                    Text(text = stringResource(R.string.settings_ignore_battery_desc), style = MaterialTheme.typography.bodySmall)
+                }
                 if (ignoringBatteryOpt) {
-                    Text(stringResource(R.string.settings_granted))
+                    Text(text = stringResource(R.string.settings_granted))
                 } else {
                     Button(onClick = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -95,11 +141,63 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Text(
+            text = stringResource(R.string.settings_version),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.align(Alignment.CenterHorizontally)
         )
+    }
+}
 
-        Spacer(modifier = Modifier.height(32.dp))
+@Composable
+private fun AccordionCard(
+    title: String,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    content: @Composable () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { onExpandedChange(!expanded) }
+                .padding(vertical = 12.dp, horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f)
+            )
 
-        Text(stringResource(R.string.settings_version), style = MaterialTheme.typography.bodySmall)
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null
+            )
+        }
+
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn() + expandVertically(
+                animationSpec = spring(),
+                expandFrom = Alignment.Top
+            ),
+            exit = shrinkVertically(
+                animationSpec = spring(),
+                shrinkTowards = Alignment.Top
+            ) + fadeOut()
+        ) {
+            Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                content()
+            }
+        }
     }
 }
 
