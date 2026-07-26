@@ -33,18 +33,19 @@
     <string name="notif_disconnected">Disconnected \u2014 waiting...</string>
     <string name="notif_title">pLauncher</string>
     <string name="settings_title">Settings</string>
+    <string name="settings_section_general">General</string>
+    <string name="settings_section_permissions">Permissions</string>
     <string name="settings_show_system_apps">Show system apps</string>
     <string name="settings_generate_crash_reports">Generate crash reports</string>
     <string name="settings_crash_reports_desc">Show crash details when the app crashes</string>
-    <string name="settings_perm_section_title">Background Launch Permissions</string>
-    <string name="settings_perm_section_desc">Required for launching apps from Pebble when this app is in background</string>
+
     <string name="settings_draw_overlays">Draw Over Other Apps</string>
     <string name="settings_draw_overlays_desc">Allows launching apps from background service</string>
     <string name="settings_granted">Granted</string>
     <string name="settings_ignore_battery">Ignore Battery Optimizations</string>
     <string name="settings_ignore_battery_desc">Prevents aggressive service killing</string>
     <string name="button_grant">Grant</string>
-    <string name="settings_version">pLauncher v1.0.0</string>
+    <string name="settings_version">v1.0.0</string>
     <string name="picker_title">Pick Apps</string>
     <string name="placeholder_search">Search...</string>
     <string name="button_done">Done</string>
