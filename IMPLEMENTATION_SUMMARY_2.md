@@ -100,3 +100,107 @@ All four buttons use uniform `contentPadding = PaddingValues(horizontal = 12.dp)
 
 - Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
 - Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+---
+
+## #7 — Permission Dialog: Dual Grant Buttons
+
+### Overview
+
+Restructured the permission dialog in `MainActivity.kt` that appears on first launch. Previously, the dialog listed both required permissions ("Draw Over Other Apps" and "Ignore Battery Optimizations") but only provided a single button that opened the overlay permission screen. The battery optimization permission was inaccessible from the dialog, forcing users to manually navigate to the Settings tab.
+
+The new implementation shows two stacked `Button` widgets (matching the "Grant" button styling from the Settings page), one per missing permission. A "Dismiss" button always appears as `confirmButton`. The dialog re-evaluates on return from system settings, updating to reflect newly granted or revoked permissions. It only appears on cold start (`onCreate`), not on every foreground transition.
+
+### Analysis
+
+- **Previous state**: Single `AlertDialog` with one `confirmButton` ("Open Settings") launching `ACTION_MANAGE_OVERLAY_PERMISSION`. Battery permission had no grant path from the dialog. `perm_dialog_settings_hint` told users to use the Settings tab instead.
+- **Problem**: Users who clicked the button only ever reached the overlay permission screen. The battery optimization permission was effectively hidden from the onboarding flow, leading to non-functional installations.
+- **Solution**: Two `Button` widgets stacked vertically inside the dialog's `text` content, each opening the correct system Intent. Dialog re-evaluates on `onResume` via `resumeCounter`. A `dismissedOnce` flag prevents re-appearance after explicit dismiss ("Dismiss" button), while allowing re-appearance after revoke from Settings.
+
+### Android Companion App (`apk/`) — ~20 lines changed across 2 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `strings.xml` | Added `perm_button_grant_overlay` ("Grant Overlay Permission"), `perm_button_grant_battery` ("Grant Battery Permission"). |
+| `MainActivity.kt` | Replaced single-button permission dialog with two stacked Grant buttons inside `text` content, dynamic button visibility based on missing permissions, `LaunchedEffect(resumeCounter)` for re-evaluation, `dismissedOnce` flag for cold-start-only behavior. |
+
+#### Key Implementation Details
+
+**Dynamic button layout**: The `AlertDialog`'s `text` content now contains a `Column` with:
+- Permission description text (only lists permissions that are actually missing)
+- Two `Button` widgets stacked vertically, each with `Modifier.fillMaxWidth()` and `contentPadding = PaddingValues(horizontal = 18.dp)`
+- Each button only renders if its corresponding permission is missing (`needsOverlay`, `needsBattery`)
+- Button styling matches the Settings page "Grant" buttons: filled `Button` with default colors (dark background, white text)
+
+**Button actions**:
+- "Grant Overlay Permission" → `ACTION_MANAGE_OVERLAY_PERMISSION` with package URI
+- "Grant Battery Permission" → `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` with package URI
+- "Dismiss" (`confirmButton`) → closes dialog, sets `dismissedOnce = true`
+
+**Re-evaluation on resume**: The existing `resumeCounter` mechanism (incremented in `onResume()`) drives re-evaluation:
+- `canDrawOverlays` and `ignoringBatteryOpt` are wrapped with `remember(resumeCounter)`, so they re-check on each resume
+- `LaunchedEffect(resumeCounter)` updates `showPermissionDialog` based on current permission states, but only when `dismissedOnce` is `false`
+- The dialog does NOT close when launching a grant Intent — it stays open and updates on return
+
+**Cold-start-only behavior**: A `dismissedOnce` flag prevents the dialog from reappearing on every foreground transition:
+- `dismissedOnce` starts as `false` on `onCreate`
+- Setting `dismissedOnce = true` only happens when the user clicks the "Dismiss" button
+- Grant button clicks do NOT set `dismissedOnce`, so the dialog reappears if permissions are revoked (e.g., from Settings page)
+- `onDismissRequest` (swipe away / back gesture) also does NOT set `dismissedOnce`, allowing re-appearance after revoke
+- On cold start (app killed and relaunched), `dismissedOnce` resets to `false`, and the dialog appears if permissions are still missing
+
+#### Layout
+
+```
+┌─────────────────────────────────┐
+│ Background Launch Permissions   │
+│                                 │
+│ To launch apps from Pebble      │
+│ when this app is in background, │
+│ you need to grant special       │
+│ permissions:                    │
+│                                 │
+│ • Draw Over Other Apps          │
+│ • Ignore Battery Optimizations  │
+│                                 │
+│ ┌───────────────────────────┐   │
+│ │ Grant Overlay Permission  │   │  ← Full width
+│ └───────────────────────────┘   │
+│ ┌───────────────────────────┐   │
+│ │ Grant Battery Permission  │   │  ← Full width
+│ └───────────────────────────┘   │
+│                                 │
+│        [Dismiss]                │  ← confirmButton
+└─────────────────────────────────┘
+```
+
+#### Behavior Matrix
+
+| Overlay | Battery | Dialog shown | Buttons shown | Dismiss sets flag |
+|---------|---------|-------------|---------------|-------------------|
+| Missing | Missing | Yes | Grant Overlay, Grant Battery, Dismiss | Yes |
+| Missing | Granted | Yes | Grant Overlay, Dismiss | Yes |
+| Granted | Missing | Yes | Grant Battery, Dismiss | Yes |
+| Granted | Granted | No | — | — |
+
+After revoke from Settings:
+| Action | `dismissedOnce` | Dialog on resume |
+|--------|----------------|-------------------|
+| Click Grant button | `false` | Reappears if permission revoked |
+| Click Dismiss | `true` | Does NOT reappear |
+| Swipe away / back | `false` | Reappears if permission revoked |
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 0 | 0 (unchanged) |
+| Android App (Kotlin) | 2 | ~20 (dialog restructured, strings added) |
+| **Total** | **2** | **~20** |
+
+#### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
