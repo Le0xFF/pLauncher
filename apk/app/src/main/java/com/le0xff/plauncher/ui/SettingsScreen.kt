@@ -101,14 +101,28 @@ fun SettingsScreen(
                     Text(text = stringResource(R.string.settings_draw_overlays_desc), style = MaterialTheme.typography.bodySmall)
                 }
                 if (canDrawOverlays) {
-                    Text(text = stringResource(R.string.settings_granted))
+                    Button(
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                                data = android.net.Uri.parse("package:${context.packageName}")
+                            }
+                            context.startActivity(intent)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Text(stringResource(R.string.button_revoke))
+                    }
                 } else {
-                    Button(onClick = {
-                        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
-                            data = android.net.Uri.parse("package:${context.packageName}")
-                        }
-                        context.startActivity(intent)
-                    }) {
+                    Button(
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                                data = android.net.Uri.parse("package:${context.packageName}")
+                            }
+                            context.startActivity(intent)
+                        },
+                        contentPadding = PaddingValues(horizontal = 18.dp)
+                    ) {
                         Text(stringResource(R.string.button_grant))
                     }
                 }
@@ -127,16 +141,30 @@ fun SettingsScreen(
                     Text(text = stringResource(R.string.settings_ignore_battery_desc), style = MaterialTheme.typography.bodySmall)
                 }
                 if (ignoringBatteryOpt) {
-                    Text(text = stringResource(R.string.settings_granted))
-                } else {
-                    Button(onClick = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                data = android.net.Uri.parse("package:${context.packageName}")
+                    Button(
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                context.startActivity(intent)
                             }
-                            context.startActivity(intent)
-                        }
-                    }) {
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Text(stringResource(R.string.button_revoke))
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                    data = android.net.Uri.parse("package:${context.packageName}")
+                                }
+                                context.startActivity(intent)
+                            }
+                        },
+                        contentPadding = PaddingValues(horizontal = 18.dp)
+                    ) {
                         Text(stringResource(R.string.button_grant))
                     }
                 }
