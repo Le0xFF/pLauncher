@@ -125,36 +125,70 @@ class MainActivity : ComponentActivity() {
                 }
 
                 var showPermissionDialog by remember { mutableStateOf(!canDrawOverlays.value || !ignoringBatteryOpt.value) }
+                var dismissedOnce by remember { mutableStateOf(false) }
+
+                LaunchedEffect(resumeCounter) {
+                    if (!dismissedOnce) {
+                        showPermissionDialog = !canDrawOverlays.value || !ignoringBatteryOpt.value
+                    }
+                }
 
                 if (showPermissionDialog) {
+                    val needsOverlay = !canDrawOverlays.value
+                    val needsBattery = !ignoringBatteryOpt.value
+
                     AlertDialog(
-                        onDismissRequest = { showPermissionDialog = false },
+                        onDismissRequest = {
+                            showPermissionDialog = false
+                        },
                         title = { Text(stringResource(R.string.perm_dialog_title)) },
                         text = {
                             Column {
                                 Text(stringResource(R.string.perm_dialog_text))
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text(stringResource(R.string.perm_draw_overlays))
-                                Text(stringResource(R.string.perm_ignore_battery))
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(stringResource(R.string.perm_dialog_settings_hint))
+                                if (needsOverlay) Text(stringResource(R.string.perm_draw_overlays))
+                                if (needsBattery) Text(stringResource(R.string.perm_ignore_battery))
+                                if (!needsOverlay && !needsBattery) {
+                                    Text(stringResource(R.string.perm_dialog_settings_hint))
+                                }
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Column {
+                                    if (needsOverlay) {
+                                        Button(
+                                            onClick = {
+                                                val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                                                    data = android.net.Uri.parse("package:${packageName}")
+                                                }
+                                                startActivity(intent)
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            contentPadding = PaddingValues(horizontal = 18.dp)
+                                        ) {
+                                            Text(stringResource(R.string.perm_button_grant_overlay))
+                                        }
+                                    }
+                                    if (needsBattery) {
+                                        Button(
+                                            onClick = {
+                                                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                                    data = android.net.Uri.parse("package:${packageName}")
+                                                }
+                                                startActivity(intent)
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            contentPadding = PaddingValues(horizontal = 18.dp)
+                                        ) {
+                                            Text(stringResource(R.string.perm_button_grant_battery))
+                                        }
+                                    }
+                                }
                             }
                         },
                         confirmButton = {
                             TextButton(onClick = {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                                    val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
-                                        data = android.net.Uri.parse("package:${packageName}")
-                                    }
-                                    startActivity(intent)
-                                }
                                 showPermissionDialog = false
+                                dismissedOnce = true
                             }) {
-                                Text(stringResource(R.string.button_open_settings))
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showPermissionDialog = false }) {
                                 Text(stringResource(R.string.button_dismiss))
                             }
                         }
