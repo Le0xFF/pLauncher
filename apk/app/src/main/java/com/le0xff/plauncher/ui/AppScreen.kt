@@ -5,7 +5,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Divider
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,6 +26,7 @@ fun AppScreen(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onAddApp: () -> Unit,
+    onRemoveApp: (LaunchApp) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val filtered = remember(apps, searchQuery) {
@@ -50,6 +54,10 @@ fun AppScreen(
         } else {
             LazyColumn(modifier = Modifier.weight(1f)) {
                 items(filtered, key = { it.packageName }) { app ->
+                    if (filtered.indexOf(app) > 0) {
+                        Divider(modifier = Modifier.padding(start = 16.dp))
+                    }
+
                     val context = LocalContext.current
                     val iconBitmap = remember(app.packageName) {
                         try {
@@ -78,6 +86,19 @@ fun AppScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(app.displayName)
                             Text(app.packageName, style = MaterialTheme.typography.bodySmall)
+                        }
+                        IconButton(
+                            onClick = { onRemoveApp(app) },
+                            modifier = Modifier
+                                .size(56.dp)
+                                .padding(start = 8.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = stringResource(R.string.appscreen_remove),
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(28.dp)
+                            )
                         }
                     }
                 }
