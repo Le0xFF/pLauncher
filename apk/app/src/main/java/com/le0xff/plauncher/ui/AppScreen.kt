@@ -9,6 +9,7 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,6 +28,7 @@ fun AppScreen(
     onSearchQueryChange: (String) -> Unit,
     onAddApp: () -> Unit,
     onRemoveApp: (LaunchApp) -> Unit,
+    onRenameApp: (LaunchApp) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val filtered = remember(apps, searchQuery) {
@@ -87,18 +89,28 @@ fun AppScreen(
                             Text(app.displayName)
                             Text(app.packageName, style = MaterialTheme.typography.bodySmall)
                         }
-                        IconButton(
-                            onClick = { onRemoveApp(app) },
-                            modifier = Modifier
-                                .size(56.dp)
-                                .padding(start = 8.dp)
-                        ) {
-                            Icon(
-                                Icons.Filled.Delete,
-                                contentDescription = stringResource(R.string.appscreen_remove),
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(28.dp)
-                            )
+                        Row(modifier = Modifier.padding(start = 8.dp)) {
+                            IconButton(
+                                onClick = { onRenameApp(app) },
+                                modifier = Modifier.size(56.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Edit,
+                                    contentDescription = stringResource(R.string.appscreen_rename),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onRemoveApp(app) },
+                                modifier = Modifier.size(56.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = stringResource(R.string.appscreen_remove),
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
                         }
                     }
                 }

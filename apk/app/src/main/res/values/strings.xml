@@ -65,4 +65,9 @@
     <string name="confirm_remove_title">Remove app</string>
     <string name="confirm_remove_text">Remove %s from the list?</string>
     <string name="confirm_remove_confirm">Remove</string>
+    <string name="appscreen_rename">Rename</string>
+    <string name="rename_dialog_title">Rename app</string>
+    <string name="rename_placeholder">App original name</string>
+    <string name="rename_button_save">Save</string>
+    <string name="rename_button_reset">Default</string>
 </resources>
