@@ -53,6 +53,9 @@ class AppViewModel : ViewModel() {
     private val _removeAppTarget = MutableStateFlow<LaunchApp?>(null)
     val removeAppTarget: StateFlow<LaunchApp?> = _removeAppTarget.asStateFlow()
 
+    private val _renameAppTarget = MutableStateFlow<LaunchApp?>(null)
+    val renameAppTarget: StateFlow<LaunchApp?> = _renameAppTarget.asStateFlow()
+
     private val _connectionStatus = MutableStateFlow("")
     val connectionStatus: StateFlow<String> = _connectionStatus.asStateFlow()
 
@@ -84,6 +87,10 @@ class AppViewModel : ViewModel() {
 
     fun setRemoveAppTarget(app: LaunchApp?) {
         _removeAppTarget.value = app
+    }
+
+    fun setRenameAppTarget(app: LaunchApp?) {
+        _renameAppTarget.value = app
     }
 
     fun setConnectionStatus(status: String) {
@@ -122,6 +129,7 @@ class MainActivity : ComponentActivity() {
                 val showPicker by viewModel.showPicker.collectAsState()
                 val searchQuery by viewModel.searchQuery.collectAsState()
                 val removeAppTarget by viewModel.removeAppTarget.collectAsState()
+                val renameAppTarget by viewModel.renameAppTarget.collectAsState()
                 val connectionStatus by viewModel.connectionStatus.collectAsState()
                 val resumeCounter by viewModel.resumeCounter.collectAsState()
 
@@ -239,6 +247,7 @@ class MainActivity : ComponentActivity() {
                             onSearchQueryChange = { viewModel.setSearchQuery(it) },
                             onAddApp = { viewModel.setShowPicker(true) },
                             onRemoveApp = { viewModel.setRemoveAppTarget(it) },
+                            onRenameApp = { viewModel.setRenameAppTarget(it) },
                             modifier = Modifier.padding(padding)
                         )
                     } else {
@@ -292,6 +301,76 @@ class MainActivity : ComponentActivity() {
                                 viewModel.setRemoveAppTarget(null)
                             }) {
                                 Text(stringResource(R.string.button_cancel))
+                            }
+                        }
+                    )
+                }
+
+                renameAppTarget?.let { targetApp ->
+                    val renameContext = LocalContext.current
+                    val originalName = remember(targetApp) {
+                        val pm = renameContext.packageManager
+                        try {
+                            val info = pm.getApplicationInfo(targetApp.packageName, 0)
+                            info.loadLabel(pm).toString().ifBlank { targetApp.packageName }
+                        } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+                            targetApp.packageName
+                        }
+                    }
+                    var editName by remember(targetApp) { mutableStateOf(targetApp.displayName.takeIf { it != originalName } ?: "") }
+
+                    AlertDialog(
+                        onDismissRequest = {
+                            viewModel.setRenameAppTarget(null)
+                        },
+                        title = { Text(stringResource(R.string.rename_dialog_title)) },
+                        text = {
+                            OutlinedTextField(
+                                value = editName,
+                                onValueChange = { editName = it },
+                                placeholder = { Text(originalName, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                val finalName = if (editName.isBlank()) originalName else editName.take(32)
+                                val updatedApps = apps.map { a ->
+                                    if (a.packageName == targetApp.packageName) LaunchApp(a.packageName, finalName) else a
+                                }
+                                dataStore.saveApps(updatedApps)
+                                viewModel.setApps(updatedApps)
+                                viewModel.setRenameAppTarget(null)
+                                coroutineScope.launch {
+                                    senderHelper.sendAppList(updatedApps, null)
+                                }
+                                sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
+                            }) {
+                                Text(stringResource(R.string.rename_button_save))
+                            }
+                        },
+                        dismissButton = {
+                            Row {
+                                TextButton(onClick = {
+                                    viewModel.setRenameAppTarget(null)
+                                }) {
+                                    Text(stringResource(R.string.button_cancel))
+                                }
+                                TextButton(onClick = {
+                                    val updatedApps = apps.map { a ->
+                                        if (a.packageName == targetApp.packageName) LaunchApp(a.packageName, originalName) else a
+                                    }
+                                    dataStore.saveApps(updatedApps)
+                                    viewModel.setApps(updatedApps)
+                                    viewModel.setRenameAppTarget(null)
+                                    coroutineScope.launch {
+                                        senderHelper.sendAppList(updatedApps, null)
+                                    }
+                                    sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
+                                }) {
+                                    Text(stringResource(R.string.rename_button_reset))
+                                }
                             }
                         }
                     )
