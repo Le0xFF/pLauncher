@@ -292,3 +292,72 @@ Added two new themes ("Dark" and "AMOLED") to the Android companion app, alongsi
 
 - Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
 - Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+---
+
+## #9 — Home Screen: App Icons
+
+### Overview
+
+Added app icon display to the Home screen (`AppScreen.kt`). Each app entry now shows the application's icon (36dp) to the left of the display name and package name. Icons are loaded dynamically from `PackageManager` at display time using the app's `packageName`, without modifying the data model or persistence layer.
+
+### Analysis
+
+- **Previous state**: `AppScreen.kt` used a `ListItem` composable showing only `headlineContent` (display name) and `supportingContent` (package name). No icon was visible.
+- **Model**: `LaunchApp` contains only `packageName` and `displayName`. Icons cannot be stored in `SharedPreferences`, so persistence layer (`AppDataStore`) and model remain unchanged.
+- **Strategy**: Load icons on-demand from `PackageManager` using `packageName` at render time. This is consistent with `AppPickerDialog` which already loads icons the same way. Icons are always up-to-date with the installed app.
+- **Error handling**: `PackageManager.NameNotFoundException` (uninstalled app) and generic exceptions (drawable conversion failure) are caught, returning `null`. The icon is simply omitted for apps where loading fails, preventing crashes.
+
+### Android Companion App (`apk/`) — ~30 lines changed in 1 file
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `ui/AppScreen.kt` | Added imports for `Image`, `asImageBitmap`, `LocalContext`, `toBitmap`, `PackageManager`. Replaced `ListItem` with `Row` containing icon `Image` (36dp) + `Column` with display name and package name. Icon loaded via `remember(app.packageName)` with `try/catch` for safety. |
+
+#### Key Implementation Details
+
+**Icon loading**: Inside the `LazyColumn`'s `items` lambda, each app's icon is loaded using:
+- `LocalContext.current` to get the `Context`
+- `remember(app.packageName)` to cache the bitmap per app, avoiding redundant `PackageManager` calls
+- `pm.getApplicationInfo(packageName, 0).loadIcon(pm)` to retrieve the `Drawable`
+- `drawable?.toBitmap(72, 72)?.asImageBitmap()` to convert to `ImageBitmap` (72x72 source for crisp 36dp display)
+- Two `catch` blocks: `PackageManager.NameNotFoundException` (package uninstalled) and generic `Exception` (drawable issues), both returning `null`
+
+**Row layout**: Replaced `ListItem` with `Row(verticalAlignment = Alignment.CenterVertically)`:
+- `Image` with `Modifier.size(36.dp).padding(end = 8.dp)` — shown only when icon loads successfully (`?.let`)
+- `Column(Modifier.weight(1f))` with `Text(app.displayName)` and `Text(app.packageName, style = MaterialTheme.typography.bodySmall)`
+- `Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)` for consistent spacing
+
+**Unchanged**: `LaunchApp` model, `AppDataStore` persistence, `AppPickerDialog`, `MainActivity`, `AppScreen` function signature. Search, FAB, and empty state logic are unaffected.
+
+#### Layout
+
+```
+┌─────────────────────────────────┐
+│ [Search field]                  │
+│                                 │
+│  [icon] WhatsApp         │      │
+│          com.whatsapp         │  │
+│  [icon] Google Maps        │      │
+│          com.google.android... │  │
+│  [icon] Spotify            │      │
+│          com.spotify.mobile... │  │
+│                                 │
+│                    [+ Add App]  │  ← FAB
+└─────────────────────────────────┘
+```
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 0 | 0 (unchanged) |
+| Android App (Kotlin) | 1 | ~30 (AppScreen.kt imports + layout replaced) |
+| **Total** | **1** | **~30** |
+
+#### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
