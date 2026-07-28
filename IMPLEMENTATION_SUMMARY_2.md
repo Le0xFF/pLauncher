@@ -204,3 +204,91 @@ After revoke from Settings:
 
 - Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
 - Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+---
+
+## #8 — Dark and AMOLED Themes
+
+### Overview
+
+Added two new themes ("Dark" and "AMOLED") to the Android companion app, alongside the existing "Light" theme. Theme selection is available in a new "Themes" accordion section in the Settings page, positioned after "Permissions". The selected theme is persisted in `SharedPreferences` and applies immediately to the entire UI without requiring a restart.
+
+### Analysis
+
+- **Previous state**: `MainActivity.kt` used `MaterialTheme` with no customization (Light by default). No theme selection existed. The AndroidManifest used `@android:style/Theme.Material.Light.NoActionBar` for all activities.
+- **Technology**: Jetpack Compose Material3 `ColorScheme`. Three themes: Light (`lightColorScheme()`), Dark (`darkColorScheme()`), AMOLED (dark with pure black surfaces).
+- **AMOLED specifics**: All surface colors set to pure black (`#000000`) except `surfaceContainer`/`surfaceContainerHigh` (`#1A1A1A`) and `surfaceContainerHighest` (`#222222`) for visual distinction of elevated components (NavigationBar, dropdown menus). Tonal elevation disabled to prevent surfaces from appearing grey. System dynamic color (accent) preserved via `darkColorScheme()` base.
+- **System UI**: `WindowCompat.getInsetsController` used to set status bar and navigation bar icon appearance (light icons for dark/AMOLED, dark icons for Light). Status bar and navigation bar colors set to transparent for edge-to-edge rendering.
+
+### Android Companion App (`apk/`) — ~120 lines changed across 5 files
+
+#### Files Created
+
+| File | Description |
+|---|---|
+| `ui/Theme.kt` | New file containing `AppTheme` enum (`Light`, `Dark`, `Amoled`), `getAppThemeColorScheme()` helper, and `pLauncherTheme()` composable with system UI handling. |
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `data/AppDataStore.kt` | Added `KEY_THEME`, `_appTheme`/`appTheme` StateFlow, `loadAppTheme()`, `getAppTheme()`, `setAppTheme()`. Persists theme enum name in SharedPreferences with `Light` default. |
+| `MainActivity.kt` | Added `_appTheme`/`appTheme` to `AppViewModel` with `setAppTheme()`. Replaced `MaterialTheme` with `pLauncherTheme`. Collects theme on startup from `AppDataStore`. Passes `currentTheme` and `onThemeChange` to `SettingsScreen`. |
+| `ui/SettingsScreen.kt` | Added `currentTheme` and `onThemeChange` parameters. Added "Themes" accordion with `@OptIn(ExperimentalMaterial3Api::class)` `ExposedDropdownMenuBox` containing three options using `DropdownMenuItem`. |
+| `res/values/strings.xml` | Added `settings_section_themes` ("Themes"), `settings_theme` ("Theme"), `settings_theme_light` ("Light"), `settings_theme_dark` ("Dark"), `settings_theme_amoled` ("AMOLED"). |
+
+#### Key Implementation Details
+
+**AppTheme enum**: Three values — `Light`, `Dark`, `Amoled`. Serialized as enum name string in SharedPreferences.
+
+**Color schemes**:
+- **Light**: Standard `lightColorScheme()` — unchanged from original behavior
+- **Dark**: Standard `darkColorScheme()` with system dynamic color accent
+- **AMOLED**: `darkColorScheme().copy()` with surface overrides:
+  - Pure black (`#000000`): `surface`, `surfaceVariant`, `surfaceContainerLowest`, `surfaceBright`, `surfaceDim`, `background`, `inverseSurface`
+  - Near black (`#0A0A0A`): `surfaceContainerLow`
+  - Dark grey (`#1A1A1A`): `surfaceContainer`, `surfaceContainerHigh` (NavigationBar matches dropdown menus)
+  - Slightly lighter (`#222222`): `surfaceContainerHighest`
+  - White text: `onSurface`, `onSurfaceVariant`, `onBackground`, `inverseOnSurface`
+  - Accent colors (primary, secondary, tertiary, etc.) inherited from `darkColorScheme()` (system dynamic color)
+
+**System UI integration** (`pLauncherTheme`):
+- Sets `WindowCompat.setDecorFitsSystemWindows(window, false)` for edge-to-edge
+- `controller.isAppearanceLightStatusBars = !isDark` — white icons on dark/AMOLED, black on Light
+- `controller.isAppearanceLightNavigationBars = !isDark` — same for bottom navigation gestures
+- `window.statusBarColor = TRANSPARENT` and `window.navigationBarColor = TRANSPARENT`
+- `LocalTonalElevationEnabled provides (theme != AppTheme.Amoled)` — disables tonal elevation for AMOLED to keep surfaces pure black
+
+**Settings Themes accordion**: Uses `ExposedDropdownMenuBox` (requires `@OptIn(ExperimentalMaterial3Api::class)`) with a `TextField` showing the current theme label and a dropdown with three `DropdownMenuItem` entries. Selection updates both the ViewModel and `AppDataStore` simultaneously, triggering an immediate UI refresh via `pLauncherTheme`.
+
+**Persistence**: Theme name stored as string in SharedPreferences under key `"theme"`. On first launch (key absent), defaults to `Light` — preserving existing behavior.
+
+#### AMOLED Theme Visual Layout
+
+```
+┌─────────────────────────────────┐
+│ Status bar (white icons)  ░░░░░ │  ← Transparent background
+│                                 │
+│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │  ← Pure black content (surface)
+│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │
+│ ▓▓▓▓▓ No apps configured ▓▓▓▓▓ │
+│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │
+│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │
+│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │
+│ ███ Apps  │  Settings ███      │  ← Dark grey bar (#1A1A1A)
+└─────────────────────────────────┘
+  ▓ = Black (#000000), █ = Grey (#1A1A1A)
+```
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 0 | 0 (unchanged) |
+| Android App (Kotlin) | 5 | ~120 (Theme.kt created, AppDataStore/MainActivity/SettingsScreen modified, strings added) |
+| **Total** | **5** | **~120** |
+
+#### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
