@@ -1,0 +1,127 @@
+# Implementation summary
+
+## #11 — Home Screen: Rename Button with Custom Name Dialog
+
+### Overview
+
+Added a rename button to each app entry on the Home screen (`AppScreen.kt`). Tapping the button opens a `AlertDialog` with a text field allowing the user to set a custom display name for the app. The custom name is stored in `LaunchApp.displayName` and transmitted to the Pebble watch via the existing AppMessage protocol (key 4). The dialog supports three behaviors: saving a custom name, resetting to the app's original name from `PackageManager`, and cancelling without changes.
+
+### Analysis
+
+- **Previous state**: Each app entry on the Home screen showed icon, display name, package name, and a Delete button. The display name was set automatically from the app's label when added via the picker dialog and could not be modified afterward.
+- **Model**: `LaunchApp` already contains `displayName` which is sent to the watch (key `4`, CStr, max 32 characters). The model and persistence layer (`AppDataStore`) required no changes — the `displayName` field simply takes on a user-provided value instead of the system label.
+- **Original name retrieval**: The app's original system name is not stored in `LaunchApp`. It must be retrieved dynamically from `PackageManager` using `packageName` at dialog open time. This ensures the "Default" button always resets to the current system label, even if the app was updated.
+- **Architecture**: Follows the existing pattern used for `removeAppTarget`: state in `AppViewModel`, callback passed to `AppScreen`, action handled in `MainActivity`. The Pebble sync pattern (`senderHelper.sendAppList` + broadcast) mirrors the remove and picker confirm flows.
+- **UI**: Jetpack Compose Material3 `AlertDialog` with `OutlinedTextField`, placeholder for original name, and three action buttons (Cancel, Default, Save).
+
+### Android Companion App (`apk/`) — ~80 lines changed across 3 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `res/values/strings.xml` | Added `appscreen_rename` ("Rename"), `rename_dialog_title` ("Rename app"), `rename_placeholder` ("App original name"), `rename_button_save` ("Save"), `rename_button_reset` ("Default"). |
+| `MainActivity.kt` | Added `renameAppTarget` state (`MutableStateFlow<LaunchApp?>`) and `setRenameAppTarget()` to `AppViewModel`. Wired `onRenameApp` callback to `AppScreen`. Added `AlertDialog` with `OutlinedTextField`, original name lookup via `PackageManager`, and three-button layout (Cancel, Default, Save) with full save/sync logic. |
+| `ui/AppScreen.kt` | Added `onRenameApp` parameter. Added `IconButton` with `Icons.Filled.Edit` before the Delete button, wrapped both buttons in a `Row` with `padding(start = 8.dp)`. Added import for `Icons.Filled.Edit`. |
+
+#### Key Implementation Details
+
+**ViewModel state**: Added `renameAppTarget` as `MutableStateFlow<LaunchApp?>` (nullable). When `null`, no dialog is shown. When set to a `LaunchApp`, the rename dialog appears. Reset to `null` on Save, Default, or Cancel.
+
+**Original name lookup**: On dialog open, the original system name is retrieved using `PackageManager.getApplicationInfo(packageName, 0).loadLabel(pm)`. The result is cached via `remember(targetApp)` so it doesn't re-query on every recomposition. Falls back to `packageName` if the app is uninstalled (`NameNotFoundException`). The context is captured from `LocalContext.current` before the `remember` call (since `remember`'s factory lambda is not a composable function).
+
+**Text field behavior**: The `OutlinedTextField` starts with content based on the current `displayName`:
+- If `displayName` differs from `originalName`: the field is pre-filled with the current custom name, allowing the user to edit it directly.
+- If `displayName` equals `originalName`: the field is empty, showing the original name as a faded placeholder (`onSurfaceVariant` with `alpha = 0.5f`).
+
+**Placeholder styling**: The original name appears as the `placeholder` text with `MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)`, making it visibly lighter than normal text. This clearly distinguishes the default name from user-entered text.
+
+**Three-button layout**: Uses `AlertDialog`'s `dismissButton` for Cancel and Default (in a `Row`), and `confirmButton` for Save:
+- **Cancel**: Closes the dialog without changes.
+- **Default**: Resets `displayName` to the original system name, saves to `AppDataStore`, updates ViewModel, syncs to Pebble, and closes the dialog.
+- **Save**: If field is blank, uses the original name. If field has content, uses the entered text (truncated to 32 characters for protocol compliance). Saves, updates ViewModel, syncs to Pebble, and closes the dialog.
+
+**Save logic** (on Save):
+1. Determine final name: blank field → `originalName`, non-blank → `editName.take(32)` (truncation for Pebble protocol 32-char limit).
+2. Map apps list, replacing the target app's `displayName` with the final name.
+3. Save to `AppDataStore.saveApps()`.
+4. Update ViewModel with `setApps()`.
+5. Reset `renameAppTarget` to `null` (closes dialog).
+6. Launch coroutine to send updated list to Pebble via `senderHelper.sendAppList()`.
+7. Send broadcast `PebbleListenerService.ACTION_SEND_APP_LIST` to notify the running service.
+
+This mirrors the exact sync pattern used in the remove confirmation and `AppPickerDialog` confirm flows.
+
+**Default logic**: Same as Save but always uses `originalName` as the final name. This allows the user to quickly revert a custom name to the system label.
+
+**Edit button**: `IconButton` with `Icons.Filled.Edit` (standard tint, not error-colored), placed in a `Row` before the Delete button. Both buttons use `56.dp` hit area with `28.dp` icon size, wrapped in a `Row` with `padding(start = 8.dp)` for spacing from the text column. The Delete button retains its `error` tint for visual distinction.
+
+**Unchanged**: `LaunchApp` model, `AppDataStore` persistence format, `AppPickerDialog`, `SettingsScreen`, theme handling, permission dialogs, Pebble protocol. The `onAddApp` FAB, picker flow, and remove confirmation remain fully functional alongside the new rename feature.
+
+#### Layout
+
+```
+┌─────────────────────────────────┐
+│ [Search field]                  │
+│                                 │
+│  [icon] WhatsApp   [✎] [🗑]    │
+│          com.whatsapp           │
+│  ───────────────────────────    │
+│  [icon] Google Maps  [✎] [🗑]  │
+│          com.google.android...  │
+│  ───────────────────────────    │
+│  [icon] Spotify     [✎] [🗑]    │
+│          com.spotify.mobile...  │
+│                                 │
+│                    [+ Add App]  │  ← FAB
+└─────────────────────────────────┘
+```
+
+#### Rename Dialog
+
+```
+┌─────────────────────────────────┐
+│ Rename app                      │
+│                                 │
+│ ┌───────────────────────────┐   │
+│ │ My Custom Name            │   │  ← TextField (pre-filled if custom)
+│ └───────────────────────────┘   │
+│                                 │
+│  [Cancel] [Default]     [Save]  │
+└─────────────────────────────────┘
+```
+
+When the field is empty, the original name appears as a faded placeholder:
+```
+┌─────────────────────────────────┐
+│ Rename app                      │
+│                                 │
+│ ┌───────────────────────────┐   │
+│ │ WhatsApp (faded)          │   │  ← Placeholder (alpha 0.5)
+│ └───────────────────────────┘   │
+│                                 │
+│  [Cancel] [Default]     [Save]  │
+└─────────────────────────────────┘
+```
+
+#### Button Behavior Matrix
+
+| Action | Field state | Result | Dialog |
+|--------|------------|--------|--------|
+| Save | Blank | Saves original name | Closes |
+| Save | Custom text | Saves text (truncated to 32 chars) | Closes |
+| Default | Any | Saves original name | Closes |
+| Cancel | Any | No change | Closes |
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 0 | 0 (unchanged) |
+| Android App (Kotlin) | 3 | ~80 (strings added, ViewModel state + dialog in MainActivity, edit button + button row in AppScreen) |
+| **Total** | **3** | **~80** |
+
+#### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
