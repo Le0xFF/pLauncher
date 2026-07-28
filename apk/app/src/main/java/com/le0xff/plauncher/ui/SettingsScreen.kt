@@ -23,12 +23,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.le0xff.plauncher.R
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     showSystemApps: Boolean,
@@ -37,11 +37,14 @@ fun SettingsScreen(
     onGenerateCrashReportsChange: (Boolean) -> Unit,
     canDrawOverlays: Boolean,
     ignoringBatteryOpt: Boolean,
+    currentTheme: AppTheme,
+    onThemeChange: (AppTheme) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     var generalExpanded by remember { mutableStateOf(false) }
     var permissionsExpanded by remember { mutableStateOf(false) }
+    var themesExpanded by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
@@ -166,6 +169,50 @@ fun SettingsScreen(
                         contentPadding = PaddingValues(horizontal = 18.dp)
                     ) {
                         Text(stringResource(R.string.button_grant))
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        AccordionCard(
+            title = stringResource(R.string.settings_section_themes),
+            expanded = themesExpanded,
+            onExpandedChange = { themesExpanded = it }
+        ) {
+            val themeLabels = mapOf(
+                AppTheme.Light to stringResource(R.string.settings_theme_light),
+                AppTheme.Dark to stringResource(R.string.settings_theme_dark),
+                AppTheme.Amoled to stringResource(R.string.settings_theme_amoled)
+            )
+            var expanded by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = it }
+            ) {
+                TextField(
+                    value = themeLabels[currentTheme] ?: stringResource(R.string.settings_theme_light),
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text(stringResource(R.string.settings_theme)) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor()
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    themeLabels.forEach { (theme, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                onThemeChange(theme)
+                                expanded = false
+                            }
+                        )
                     }
                 }
             }

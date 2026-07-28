@@ -3,7 +3,7 @@ package com.le0xff.plauncher.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.le0xff.plauncher.model.LaunchApp
-import kotlinx.coroutines.flow.Flow
+import com.le0xff.plauncher.ui.AppTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -14,6 +14,7 @@ class AppDataStore(private val context: Context) {
         private const val KEY_APPS = "apps"
         private const val KEY_SYSTEM_APPS = "system_apps"
         private const val KEY_GENERATE_CRASH_REPORTS = "generate_crash_reports"
+        private const val KEY_THEME = "theme"
         private const val SEP = "|"
         private const val LINE_SEP = "\n"
     }
@@ -26,6 +27,9 @@ class AppDataStore(private val context: Context) {
 
     private val _generateCrashReports = MutableStateFlow<Boolean>(loadGenerateCrashReports())
     val generateCrashReports: StateFlow<Boolean> = _generateCrashReports
+
+    private val _appTheme = MutableStateFlow<AppTheme>(loadAppTheme())
+    val appTheme: StateFlow<AppTheme> = _appTheme
 
     fun saveApps(apps: List<LaunchApp>) {
         _apps.value = apps
@@ -65,5 +69,17 @@ class AppDataStore(private val context: Context) {
 
     private fun loadGenerateCrashReports(): Boolean {
         return prefs.getBoolean(KEY_GENERATE_CRASH_REPORTS, false)
+    }
+
+    private fun loadAppTheme(): AppTheme {
+        val name = prefs.getString(KEY_THEME, null) ?: return AppTheme.Light
+        return AppTheme.valueOf(name)
+    }
+
+    fun getAppTheme(): AppTheme = _appTheme.value
+
+    fun setAppTheme(value: AppTheme) {
+        _appTheme.value = value
+        prefs.edit().putString(KEY_THEME, value.name).apply()
     }
 }

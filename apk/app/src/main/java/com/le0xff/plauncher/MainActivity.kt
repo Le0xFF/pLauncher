@@ -19,12 +19,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import com.le0xff.plauncher.data.AppDataStore
 import com.le0xff.plauncher.model.LaunchApp
+import com.le0xff.plauncher.ui.AppTheme
 import com.le0xff.plauncher.ui.AppPickerDialog
 import com.le0xff.plauncher.ui.AppScreen
 import com.le0xff.plauncher.ui.SettingsScreen
 import com.le0xff.plauncher.R
 import com.le0xff.plauncher.ui.checkCanDrawOverlays
 import com.le0xff.plauncher.ui.checkIgnoringBatteryOptimizations
+import com.le0xff.plauncher.ui.pLauncherTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +52,9 @@ class AppViewModel : ViewModel() {
 
     private val _connectionStatus = MutableStateFlow("")
     val connectionStatus: StateFlow<String> = _connectionStatus.asStateFlow()
+
+    private val _appTheme = MutableStateFlow(AppTheme.Light)
+    val appTheme: StateFlow<AppTheme> = _appTheme.asStateFlow()
 
     private val _resumeCounter = MutableStateFlow(0)
     val resumeCounter: StateFlow<Int> = _resumeCounter.asStateFlow()
@@ -78,6 +83,10 @@ class AppViewModel : ViewModel() {
         _connectionStatus.value = status
     }
 
+    fun setAppTheme(value: AppTheme) {
+        _appTheme.value = value
+    }
+
     fun onActivityResume() {
         _resumeCounter.value++
     }
@@ -95,7 +104,8 @@ class MainActivity : ComponentActivity() {
         senderHelper = PebbleSenderHelper(this)
 
         setContent {
-            MaterialTheme {
+            val appTheme by viewModel.appTheme.collectAsState()
+            pLauncherTheme(theme = appTheme) {
                 val context = LocalContext.current
                 val dataStore = remember { appDataStore }
 
@@ -112,6 +122,7 @@ class MainActivity : ComponentActivity() {
                     viewModel.setApps(dataStore.apps.value)
                     viewModel.setShowSystemApps(dataStore.getShowSystemApps())
                     viewModel.setGenerateCrashReports(dataStore.getGenerateCrashReports())
+                    viewModel.setAppTheme(dataStore.getAppTheme())
                     viewModel.setConnectionStatus(initialStatus)
                 }
 
@@ -235,6 +246,11 @@ class MainActivity : ComponentActivity() {
                             },
                             canDrawOverlays = canDrawOverlays.value,
                             ignoringBatteryOpt = ignoringBatteryOpt.value,
+                            currentTheme = appTheme,
+                            onThemeChange = {
+                                viewModel.setAppTheme(it)
+                                dataStore.setAppTheme(it)
+                            },
                             modifier = Modifier.padding(padding)
                         )
                     }
