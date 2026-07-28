@@ -361,3 +361,98 @@ Added app icon display to the Home screen (`AppScreen.kt`). Each app entry now s
 
 - Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
 - Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+---
+
+## #10 — Home Screen: Remove Button with Confirmation Dialog
+
+### Overview
+
+Added a remove button to each app entry on the Home screen (`AppScreen.kt`). Tapping the button opens a confirmation `AlertDialog` asking the user to confirm the removal. Upon confirmation, the app is removed from the list, saved to `SharedPreferences`, and the updated list is pushed to the Pebble watch. Also added horizontal `Divider` lines between list items for clearer visual separation.
+
+### Analysis
+
+- **Previous state**: The only way to remove an app from the Home screen list was to reopen the "Pick Apps" dialog and deselect it, which was cumbersome for removing single apps.
+- **Architecture**: Follows the existing pattern used for `showPicker`/`AppPickerDialog`: state in `AppViewModel`, callback passed to `AppScreen`, action handled in `MainActivity`. The Pebble sync pattern (`senderHelper.sendAppList` + broadcast) mirrors the `AppPickerDialog` confirm flow.
+- **UI**: Jetpack Compose Material3. Delete icon (`Icons.Filled.Delete`) with error tint per list item. Confirmation `AlertDialog` with app name. `Divider` between items for visual clarity.
+
+### Android Companion App (`apk/`) — ~50 lines changed across 3 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `res/values/strings.xml` | Added `appscreen_remove` ("Remove"), `confirm_remove_title` ("Remove app"), `confirm_remove_text` ("Remove %s from the list?"), `confirm_remove_confirm` ("Remove"). |
+| `MainActivity.kt` | Added `removeAppTarget` state (`MutableStateFlow<LaunchApp?>`) and `setRemoveAppTarget()` to `AppViewModel`. Wired `onRemoveApp` callback to `AppScreen`. Added confirmation `AlertDialog` that removes the app, saves to `AppDataStore`, updates ViewModel, and syncs to Pebble via `senderHelper.sendAppList` + broadcast. |
+| `ui/AppScreen.kt` | Added `onRemoveApp` parameter. Added `IconButton` with `Icons.Filled.Delete` (error tint) to each list row. Added `Divider` between items (skipped for first item) with `start = 16.dp` padding to match item indentation. |
+
+#### Key Implementation Details
+
+**ViewModel state**: Added `removeAppTarget` as `MutableStateFlow<LaunchApp?>` (nullable). When `null`, no dialog is shown. When set to a `LaunchApp`, the confirmation dialog appears. Reset to `null` on both confirm and dismiss.
+
+**Confirmation dialog**: Standard `AlertDialog` with:
+- `onDismissRequest`: resets `removeAppTarget` to `null` (closes without action)
+- `title`: "Remove app"
+- `text`: "Remove {app displayName} from the list?" (formatted string)
+- `confirmButton`: "Remove" — performs the actual removal
+- `dismissButton`: "Cancel" — closes dialog without changes
+
+**Removal logic** (on confirm):
+1. Filter apps list to exclude the target app by `packageName`
+2. Save updated list to `AppDataStore.saveApps()`
+3. Update ViewModel with `setApps()`
+4. Reset `removeAppTarget` to `null` (closes dialog)
+5. Launch coroutine to send updated list to Pebble via `senderHelper.sendAppList()`
+6. Send broadcast `PebbleListenerService.ACTION_SEND_APP_LIST` to notify the running service
+
+This mirrors the exact sync pattern used in `AppPickerDialog`'s confirm handler.
+
+**Delete button**: `IconButton` with `Icons.Filled.Delete`, tinted with `MaterialTheme.colorScheme.error` for visual emphasis. Placed at the end of each `Row` after the app info `Column`. Uses `contentDescription` from `appscreen_remove` string for accessibility.
+
+**Divider**: `Divider` composable placed before each list item except the first (`indexOf(app) > 0` check). Uses `Modifier.padding(start = 16.dp)` to align with item content indentation. Provides clear visual separation between entries without adding visual noise at the top of the list.
+
+**Unchanged**: `LaunchApp` model, `AppDataStore` persistence format, `AppPickerDialog`, `SettingsScreen`, theme handling, permission dialogs. The `onAddApp` FAB and picker flow remain fully functional alongside the new remove feature.
+
+#### Layout
+
+```
+┌─────────────────────────────────┐
+│ [Search field]                  │
+│                                 │
+│  [icon] WhatsApp    [🗑]        │
+│          com.whatsapp           │
+│ ───────────────────────────     │
+│  [icon] Google Maps   [🗑]      │
+│          com.google.android...  │
+│ ───────────────────────────     │
+│  [icon] Spotify     [🗑]        │
+│          com.spotify.mobile...  │
+│                                 │
+│                    [+ Add App]  │  ← FAB
+└─────────────────────────────────┘
+```
+
+#### Confirmation Dialog
+
+```
+┌─────────────────────────────────┐
+│ Remove app                      │
+│                                 │
+│ Remove WhatsApp from the list?  │
+│                                 │
+│        [Remove]    [Cancel]     │
+└─────────────────────────────────┘
+```
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 0 | 0 (unchanged) |
+| Android App (Kotlin) | 3 | ~50 (strings added, ViewModel state + dialog in MainActivity, remove button + divider in AppScreen) |
+| **Total** | **3** | **~50** |
+
+#### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
