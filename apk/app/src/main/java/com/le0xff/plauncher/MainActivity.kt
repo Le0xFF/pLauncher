@@ -50,6 +50,9 @@ class AppViewModel : ViewModel() {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    private val _removeAppTarget = MutableStateFlow<LaunchApp?>(null)
+    val removeAppTarget: StateFlow<LaunchApp?> = _removeAppTarget.asStateFlow()
+
     private val _connectionStatus = MutableStateFlow("")
     val connectionStatus: StateFlow<String> = _connectionStatus.asStateFlow()
 
@@ -77,6 +80,10 @@ class AppViewModel : ViewModel() {
 
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
+    }
+
+    fun setRemoveAppTarget(app: LaunchApp?) {
+        _removeAppTarget.value = app
     }
 
     fun setConnectionStatus(status: String) {
@@ -114,6 +121,7 @@ class MainActivity : ComponentActivity() {
                 val generateCrashReports by viewModel.generateCrashReports.collectAsState()
                 val showPicker by viewModel.showPicker.collectAsState()
                 val searchQuery by viewModel.searchQuery.collectAsState()
+                val removeAppTarget by viewModel.removeAppTarget.collectAsState()
                 val connectionStatus by viewModel.connectionStatus.collectAsState()
                 val resumeCounter by viewModel.resumeCounter.collectAsState()
 
@@ -230,6 +238,7 @@ class MainActivity : ComponentActivity() {
                             searchQuery = searchQuery,
                             onSearchQueryChange = { viewModel.setSearchQuery(it) },
                             onAddApp = { viewModel.setShowPicker(true) },
+                            onRemoveApp = { viewModel.setRemoveAppTarget(it) },
                             modifier = Modifier.padding(padding)
                         )
                     } else {
@@ -255,7 +264,40 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    if (showPicker) {
+                    removeAppTarget?.let { targetApp ->
+                    AlertDialog(
+                        onDismissRequest = {
+                            viewModel.setRemoveAppTarget(null)
+                        },
+                        title = { Text(stringResource(R.string.confirm_remove_title)) },
+                        text = {
+                            Text(stringResource(R.string.confirm_remove_text, targetApp.displayName))
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                val updatedApps = apps.filter { it.packageName != targetApp.packageName }
+                                dataStore.saveApps(updatedApps)
+                                viewModel.setApps(updatedApps)
+                                viewModel.setRemoveAppTarget(null)
+                                coroutineScope.launch {
+                                    senderHelper.sendAppList(updatedApps, null)
+                                }
+                                sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
+                            }) {
+                                Text(stringResource(R.string.confirm_remove_confirm))
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                viewModel.setRemoveAppTarget(null)
+                            }) {
+                                Text(stringResource(R.string.button_cancel))
+                            }
+                        }
+                    )
+                }
+
+                if (showPicker) {
                         AppPickerDialog(
                             selectedApps = apps,
                             showSystemApps = showSystemApps,

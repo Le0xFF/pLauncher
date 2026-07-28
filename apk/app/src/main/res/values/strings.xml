@@ -61,4 +61,8 @@
     <string name="appscreen_empty">No apps configured. Tap + to add apps.</string>
     <string name="appscreen_no_match">No matching apps.</string>
     <string name="button_add_app">+</string>
+    <string name="appscreen_remove">Remove</string>
+    <string name="confirm_remove_title">Remove app</string>
+    <string name="confirm_remove_text">Remove %s from the list?</string>
+    <string name="confirm_remove_confirm">Remove</string>
 </resources>
