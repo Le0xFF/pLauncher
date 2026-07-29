@@ -70,4 +70,5 @@
     <string name="rename_placeholder">App original name</string>
     <string name="rename_button_save">Save</string>
     <string name="rename_button_reset">Default</string>
+    <string name="appscreen_drag_handle">Reorder</string>
 </resources>
