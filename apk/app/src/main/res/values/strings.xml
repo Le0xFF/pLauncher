@@ -18,6 +18,8 @@
     <string name="crash_label_message">Message: </string>
     <string name="crash_label_stacktrace">Stack Trace:</string>
     <string name="crash_label_device_info">Device Info</string>
+    <string name="crash_button_copy">Copy</string>
+    <string name="crash_copied_snackbar">Copied to clipboard</string>
     <string name="crash_unexpected_error">An unexpected error occurred</string>
     <string name="button_restart_app">Restart App</string>
     <string name="button_close_app">Close App</string>
@@ -40,6 +42,10 @@
     <string name="settings_show_system_apps">Show system apps</string>
     <string name="settings_generate_crash_reports">Generate crash reports</string>
     <string name="settings_crash_reports_desc">Show crash details when the app crashes</string>
+    <string name="settings_section_debug">Debug</string>
+    <string name="settings_crash_the_app">Crash the application</string>
+    <string name="settings_crash_the_app_desc">Triggers a test crash to verify crash reports</string>
+    <string name="settings_crash_button">Crash</string>
 
     <string name="settings_draw_overlays">Draw Over Other Apps</string>
     <string name="settings_draw_overlays_desc">Allows launching apps from background service</string>

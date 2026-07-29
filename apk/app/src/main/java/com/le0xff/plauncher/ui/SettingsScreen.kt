@@ -44,7 +44,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     var generalExpanded by remember { mutableStateOf(false) }
     var permissionsExpanded by remember { mutableStateOf(false) }
-    var themesExpanded by remember { mutableStateOf(false) }
+    var debugExpanded by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
@@ -56,6 +56,44 @@ fun SettingsScreen(
             expanded = generalExpanded,
             onExpandedChange = { generalExpanded = it }
         ) {
+            val themeLabels = mapOf(
+                AppTheme.Light to stringResource(R.string.settings_theme_light),
+                AppTheme.Dark to stringResource(R.string.settings_theme_dark),
+                AppTheme.Amoled to stringResource(R.string.settings_theme_amoled)
+            )
+            var expanded by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = it }
+            ) {
+                TextField(
+                    value = themeLabels[currentTheme] ?: stringResource(R.string.settings_theme_light),
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text(stringResource(R.string.settings_theme)) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor()
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    themeLabels.forEach { (theme, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                onThemeChange(theme)
+                                expanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider()
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -68,21 +106,6 @@ fun SettingsScreen(
                     modifier = Modifier.weight(1f)
                 )
                 Switch(checked = showSystemApps, onCheckedChange = onShowSystemAppsChange)
-            }
-
-            HorizontalDivider()
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(text = stringResource(R.string.settings_generate_crash_reports), style = MaterialTheme.typography.bodyLarge)
-                    Text(text = stringResource(R.string.settings_crash_reports_desc), style = MaterialTheme.typography.bodySmall)
-                }
-                Switch(checked = generateCrashReports, onCheckedChange = onGenerateCrashReportsChange)
             }
         }
 
@@ -177,43 +200,41 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         AccordionCard(
-            title = stringResource(R.string.settings_section_themes),
-            expanded = themesExpanded,
-            onExpandedChange = { themesExpanded = it }
+            title = stringResource(R.string.settings_section_debug),
+            expanded = debugExpanded,
+            onExpandedChange = { debugExpanded = it }
         ) {
-            val themeLabels = mapOf(
-                AppTheme.Light to stringResource(R.string.settings_theme_light),
-                AppTheme.Dark to stringResource(R.string.settings_theme_dark),
-                AppTheme.Amoled to stringResource(R.string.settings_theme_amoled)
-            )
-            var expanded by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(
-                expanded = expanded,
-                onExpandedChange = { expanded = it }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                TextField(
-                    value = themeLabels[currentTheme] ?: stringResource(R.string.settings_theme_light),
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text(stringResource(R.string.settings_theme)) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor()
-                )
-                ExposedDropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = stringResource(R.string.settings_generate_crash_reports), style = MaterialTheme.typography.bodyLarge)
+                    Text(text = stringResource(R.string.settings_crash_reports_desc), style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = generateCrashReports, onCheckedChange = onGenerateCrashReportsChange)
+            }
+
+            HorizontalDivider()
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = stringResource(R.string.settings_crash_the_app), style = MaterialTheme.typography.bodyLarge)
+                    Text(text = stringResource(R.string.settings_crash_the_app_desc), style = MaterialTheme.typography.bodySmall)
+                }
+                Button(
+                    onClick = { throw RuntimeException("Test crash from settings") },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    contentPadding = PaddingValues(horizontal = 12.dp)
                 ) {
-                    themeLabels.forEach { (theme, label) ->
-                        DropdownMenuItem(
-                            text = { Text(label) },
-                            onClick = {
-                                onThemeChange(theme)
-                                expanded = false
-                            }
-                        )
-                    }
+                    Text(stringResource(R.string.settings_crash_button))
                 }
             }
         }
