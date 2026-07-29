@@ -101,6 +101,17 @@ class AppViewModel : ViewModel() {
         _appTheme.value = value
     }
 
+    fun reorderApp(fromIndex: Int, toIndex: Int): List<LaunchApp> {
+        val current = _apps.value
+        if (fromIndex == toIndex || fromIndex !in current.indices || toIndex !in current.indices) {
+            return current
+        }
+        val reordered = current.toMutableList()
+        val item = reordered.removeAt(fromIndex)
+        reordered.add(toIndex, item)
+        return reordered
+    }
+
     fun onActivityResume() {
         _resumeCounter.value++
     }
@@ -248,6 +259,17 @@ class MainActivity : ComponentActivity() {
                             onAddApp = { viewModel.setShowPicker(true) },
                             onRemoveApp = { viewModel.setRemoveAppTarget(it) },
                             onRenameApp = { viewModel.setRenameAppTarget(it) },
+                            onReorderApp = { fromIndex, toIndex ->
+                                val reordered = viewModel.reorderApp(fromIndex, toIndex)
+                                if (reordered !== apps) {
+                                    viewModel.setApps(reordered)
+                                    dataStore.saveApps(reordered)
+                                    coroutineScope.launch {
+                                        senderHelper.sendAppList(reordered, null)
+                                    }
+                                    sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
+                                }
+                            },
                             modifier = Modifier.padding(padding)
                         )
                     } else {

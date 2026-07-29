@@ -2,19 +2,31 @@ package com.le0xff.plauncher.ui
 
 import android.content.pm.PackageManager
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Divider
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
@@ -29,11 +41,20 @@ fun AppScreen(
     onAddApp: () -> Unit,
     onRemoveApp: (LaunchApp) -> Unit,
     onRenameApp: (LaunchApp) -> Unit,
+    onReorderApp: (fromIndex: Int, toIndex: Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val filtered = remember(apps, searchQuery) {
         if (searchQuery.isBlank()) apps else apps.filter { it.displayName.contains(searchQuery, ignoreCase = true) }
     }
+
+    val density = LocalDensity.current
+    var measuredItemHeightPx by remember { mutableStateOf(0f) }
+
+    var draggedAppPackageName by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+
+    val listState = rememberLazyListState()
 
     Column(modifier = modifier.fillMaxSize()) {
         OutlinedTextField(
@@ -54,8 +75,34 @@ fun AppScreen(
                 Text(if (apps.isEmpty()) stringResource(R.string.appscreen_empty) else stringResource(R.string.appscreen_no_match), style = MaterialTheme.typography.bodyMedium)
             }
         } else {
-            LazyColumn(modifier = Modifier.weight(1f)) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                state = listState
+            ) {
                 items(filtered, key = { it.packageName }) { app ->
+                    val appIndexInApps = apps.indexOf(app)
+                    val isDragged = draggedAppPackageName == app.packageName
+
+                    val itemHeightPx = if (measuredItemHeightPx > 0f) measuredItemHeightPx else with(LocalDensity.current) { 64.dp.toPx() }
+
+                    val draggableState = rememberDraggableState(
+                        onDelta = { delta ->
+                            if (isDragged) {
+                                dragOffsetY += delta
+
+                                val itemsCrossed = (dragOffsetY / itemHeightPx).toInt()
+                                if (itemsCrossed != 0) {
+                                    val fromIdx = apps.indexOfFirst { it.packageName == draggedAppPackageName }
+                                    if (fromIdx >= 0) {
+                                        val toIndex = (fromIdx + itemsCrossed).coerceIn(0, apps.size - 1)
+                                        onReorderApp(fromIdx, toIndex)
+                                        dragOffsetY = 0f
+                                    }
+                                }
+                            }
+                        }
+                    )
+
                     if (filtered.indexOf(app) > 0) {
                         Divider(modifier = Modifier.padding(start = 16.dp))
                     }
@@ -75,9 +122,63 @@ fun AppScreen(
                     }
 
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                            .onGloballyPositioned { layoutCoords ->
+                                if (measuredItemHeightPx <= 0f) {
+                                    measuredItemHeightPx = layoutCoords.size.height.toFloat()
+                                }
+                            }
+                            .then(
+                                if (isDragged) {
+                                    Modifier
+                                        .graphicsLayer {
+                                            shadowElevation = 8.dp.toPx()
+                                            clip = true
+                                            shape = RoundedCornerShape(8.dp)
+                                            translationY = dragOffsetY
+                                        }
+                                        .background(
+                                            MaterialTheme.colorScheme.surfaceContainer,
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                } else {
+                                    Modifier
+                                }
+                            ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        if (searchQuery.isBlank()) {
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .draggable(
+                                        orientation = Orientation.Vertical,
+                                        state = draggableState,
+                                        startDragImmediately = false,
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        onDragStarted = {
+                                            draggedAppPackageName = app.packageName
+                                            dragOffsetY = 0f
+                                        },
+                                        onDragStopped = { _: Float ->
+                                            draggedAppPackageName = null
+                                            dragOffsetY = 0f
+                                        }
+                                    )
+                            ) {
+                                Icon(
+                                    Icons.Filled.DragIndicator,
+                                    contentDescription = stringResource(R.string.appscreen_drag_handle),
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .align(Alignment.Center),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
                         iconBitmap?.let { bitmap ->
                             Image(
                                 bitmap = bitmap,
