@@ -245,3 +245,118 @@ During drag (item elevated, translated, with shadow):
 
 - Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
 - Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+---
+
+## #13 — Settings Screen Restructure + Crash Report Improvements
+
+### Overview
+
+Restructured the Settings screen of the Android companion app and improved the crash report system. The Settings screen was reorganized: the theme selector was moved from its dedicated "Themes" section into "General" (above "Show system apps"), the "Themes" accordion was removed, and a new "Debug" accordion was created below "Permissions". "Generate crash reports" was moved from "General" into "Debug". A "Crash" button was added in the Debug section to trigger a test crash for verifying crash report functionality.
+
+Additionally, the crash report system received several critical fixes and improvements: the crash handler was fixed to catch crashes on all threads (not just the startup thread), the crash report screen was enhanced with device info displayed inside the stack trace card, a copy button was added to copy the stack trace to clipboard, and the handler was fixed to respect the switch state at crash time.
+
+### Analysis
+
+- **Previous state**: Settings screen had three accordion sections: General (Show system apps, Generate crash reports), Permissions (Draw Overlays, Ignore Battery), Themes (theme dropdown). The crash report screen showed exception, message, stack trace, and device info as separate sections.
+- **Settings restructure**: The theme `ExposedDropdownMenu` was moved from the "Themes" accordion into "General" as the first item. The "Themes" accordion and its state variable were removed. A new "Debug" accordion was added with "Generate crash reports" switch and "Crash" button.
+- **Crash handler not firing**: `CrashApplication` used `Thread.currentThread().uncaughtExceptionHandler` which only set the handler on the thread running `onCreate()`. Crashes from UI interactions occur on the main thread. Fixed by switching to `Thread.setDefaultUncaughtExceptionHandler()` which catches uncaught exceptions on all threads.
+- **Android system crash dialog overriding**: `originalHandler?.uncaughtException(thread, ex)` delegated to Android's default handler, which shows the system "App has stopped" dialog and kills the process. Fixed by replacing with `Process.killProcess()` + `System.exit(2)`, letting `CrashReportActivity` be the sole crash screen.
+- **Crash report firing when switch is off**: The handler checked the preference at startup but stayed installed even after the user disabled the switch. Fixed by re-checking the preference inside the handler at crash time.
+- **Empty stack trace**: `buildCrashReport` used an indented multiline string template (`"""..."""` with `trimIndent()`). `trimIndent()` stripped leading whitespace from the template lines but NOT from the interpolated `$truncatedStack` (output of `ex.stackTraceToString()`). This caused the label lines to have leading spaces while stack trace lines had none. The parser's exact-match search for `"Stack Trace:"` failed because the actual line was `"            Stack Trace:"`. Fixed by using `buildString` with explicit `\n` separators, producing clean lines with no indentation.
+- **`apply()` vs `commit()`**: Changed `prefs.edit().putString(...).apply()` to `.commit()` to ensure the crash report is persisted to disk before the process is killed.
+- **Device info placement**: Moved device info inside the stack trace card, appearing at the top before the stack trace, separated by `"---"`. This consolidates all diagnostic info into one scrollable card.
+- **Copy to clipboard**: Added a "Copy" button with `ContentCopy` icon aligned to the right of the "Stack Trace:" label. Uses `ClipboardManager` to copy the raw stack trace. Shows a confirmation text overlay at the bottom-left corner when copied.
+
+### Android Companion App (`apk/`) — ~100 lines changed across 4 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `res/values/strings.xml` | Added `settings_section_debug` ("Debug"), `settings_crash_the_app` ("Crash the application"), `settings_crash_the_app_desc` ("Triggers a test crash to verify crash reports"), `settings_crash_button` ("Crash"), `crash_button_copy` ("Copy"), `crash_copied_snackbar` ("Copied to clipboard"). |
+| `ui/SettingsScreen.kt` | Restructured accordions: moved theme dropdown into "General" (above Show system apps), removed "Themes" accordion and `themesExpanded` state, added "Debug" accordion with `debugExpanded` state, moved "Generate crash reports" switch into Debug, added "Crash" button with error-colored styling that throws `RuntimeException`. |
+| `CrashApplication.kt` | Changed `Thread.currentThread().uncaughtExceptionHandler` to `Thread.setDefaultUncaughtExceptionHandler()`. Added preference re-check inside the handler. Replaced `originalHandler?.uncaughtException()` with `Process.killProcess()` + `System.exit(2)`. Changed `apply()` to `commit()`. Refactored `buildCrashReport` template from indented multiline string to `buildString` block. |
+| `CrashReportActivity.kt` | Added `ClipboardManager` integration, copy button with `ContentCopy` icon in a `Row` with `Arrangement.SpaceBetween` alongside the "Stack Trace:" label. Moved device info inside the stack trace card (top, before `"---"` separator, then stack trace). Replaced snackbar with a `Text` overlay at `Alignment.BottomStart` inside an outer `Box`. |
+
+#### Key Implementation Details
+
+**Settings Screen Restructure**:
+
+The `SettingsScreen` composable's parameter signature remains unchanged (same 8 parameters). Only the internal layout was reorganized:
+
+- **General** (modified): Theme `ExposedDropdownMenu` as first item, `HorizontalDivider`, "Show system apps" switch.
+- **Permissions** (unchanged): Draw Overlays and Ignore Battery Optimizations with Grant/Revoke buttons.
+- **Debug** (new): "Generate crash reports" switch with description, `HorizontalDivider`, "Crash the application" with description and error-colored "Crash" button. The button is always visible regardless of switch state.
+
+The `themesExpanded` state variable was removed. A new `debugExpanded` state variable was added.
+
+**Crash Handler Architecture**:
+
+The handler is installed at `Application.onCreate()` (only if the switch was ON at startup). At crash time, it re-checks the preference from `SharedPreferences`. If OFF, it terminates the process cleanly without showing `CrashReportActivity`. If ON, it builds the crash report, persists it with `.commit()`, starts `CrashReportActivity` with the report as an intent extra, then kills the process.
+
+The `buildCrashReport` method uses `buildString` with explicit newlines, producing output like:
+```
+Exception: RuntimeException
+Message: Test crash from settings
+
+Stack Trace:
+java.lang.RuntimeException: Test crash from settings
+at com.le0xff.plauncher.ui.SettingsScreenKt...
+at ...
+
+Device: moto g52
+Android: 13
+App Version: 1.0
+```
+
+The parser in `CrashReportActivity` splits by lines and uses exact match (`it == labelStacktrace`) and prefix match (`it.startsWith(labelDevice)`) to locate sections. The clean output format ensures reliable parsing.
+
+**Crash Report Screen Layout**:
+
+```
+┌─────────────────────────────────┐
+│ pLauncher has crashed          │  ← TopAppBar
+├─────────────────────────────────┤
+│ Exception: RuntimeException    │  ← headlineSmall, error color
+│ Message: Test crash from...    │  ← bodyLarge
+│ ───────────────────────────    │  ← Divider
+│                                │
+│ Stack Trace:        [📋 Copy] │  ← Row with SpaceBetween
+│                                │
+│ ┌───────────────────────────┐  │  ← Card (surfaceVariant)
+│ │ Device: moto g52          │  │  ← device info at top
+│ │ Android: 13               │  │
+│ │ App Version: 1.0          │  │
+│ │ ---                       │  │  ← separator
+│ │ java.lang.RuntimeExcept..│  │  ← stack trace (monospace)
+│ │   at ...                  │  │
+│ │   at ...                  │  │
+│ └───────────────────────────┘  │
+│                                │
+│  [Restart App]   [Close App]  │
+└─────────────────────────────────┘
+```
+
+**Copy Confirmation**:
+
+The entire screen is wrapped in a `Box(modifier = Modifier.fillMaxSize())`. The main content (`Column` with `Scaffold`) fills the box. When `snackbarMessage` is non-null, a `Text` overlay appears at `Alignment.BottomStart` with `padding(16.dp)`, showing "Copied to clipboard" in `bodySmall` style with `onSurfaceVariant` color. This overlay sits on top of the button row area.
+
+**Crash Button Behavior**:
+
+The "Crash" button in the Debug section calls `throw RuntimeException("Test crash from settings")`. This throws an uncaught exception on the main thread, which is caught by `Thread.getDefaultUncaughtExceptionHandler()` (set in `CrashApplication`). The handler builds the report, starts `CrashReportActivity`, and terminates the process. The `CrashReportActivity` uses `taskAffinity="com.le0xff.plauncher.crash"` and `FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK` to appear in a separate task, ensuring it survives the process kill/restart cycle.
+
+**Unchanged**: `LaunchApp` model, `AppDataStore` persistence, `AppPickerDialog`, theme handling (`Theme.kt`), permission dialogs, Pebble protocol, rename dialog, remove confirmation, drag-to-reorder, `MainActivity.kt` (no changes needed), `PebbleSenderHelper`, `PebbleListenerService`, `BootReceiver`. All existing features remain fully functional.
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 0 | 0 (unchanged) |
+| Android App (Kotlin) | 4 | ~100 (strings added, SettingsScreen restructured, CrashApplication handler fixed, CrashReportActivity enhanced) |
+| **Total** | **4** | **~100** |
+
+#### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
