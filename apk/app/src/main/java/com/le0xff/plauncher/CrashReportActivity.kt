@@ -7,15 +7,17 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.ClipboardManager
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.le0xff.plauncher.R
 
@@ -29,105 +31,149 @@ class CrashReportActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme {
-                Scaffold(
-                    topBar = {
-                        TopAppBar(title = { Text(stringResource(R.string.crash_title)) })
+                val clipboardManager = LocalClipboardManager.current
+                val copiedSnackbarText = stringResource(R.string.crash_copied_snackbar)
+                var snackbarMessage by remember { mutableStateOf<String?>(null) }
+
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Column(Modifier.fillMaxSize()) {
+                        MaterialTheme {
+                            Scaffold(
+                                topBar = {
+                                    TopAppBar(title = { Text(stringResource(R.string.crash_title)) })
+                                }
+                            ) { padding ->
+                                Column(Modifier.padding(padding).fillMaxSize()) {
+                                    if (!crashReport.isNullOrBlank()) {
+                                        val parsed = parseCrashReport(crashReport)
+
+                                        Column(
+                                            Modifier
+                                                .weight(1f)
+                                                .verticalScroll(rememberScrollState())
+                                                .fillMaxWidth()
+                                                .padding(16.dp)
+                                        ) {
+                                            Text(
+                                                text = "${stringResource(R.string.crash_label_exception)}${parsed.exception}",
+                                                style = MaterialTheme.typography.headlineSmall,
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                            Spacer(Modifier.height(8.dp))
+                                            Text(
+                                                text = "${stringResource(R.string.crash_label_message)}${parsed.message}",
+                                                style = MaterialTheme.typography.bodyLarge
+                                            )
+                                            Spacer(Modifier.height(16.dp))
+                                            Divider()
+                                            Spacer(Modifier.height(16.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = stringResource(R.string.crash_label_stacktrace),
+                                                    style = MaterialTheme.typography.bodyMedium
+                                                )
+                                                TextButton(
+                                                    onClick = {
+                                                        clipboardManager.setText(AnnotatedString(parsed.stackTrace))
+                                                        snackbarMessage = copiedSnackbarText
+                                                    }
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.ContentCopy,
+                                                        contentDescription = stringResource(R.string.crash_button_copy),
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text(stringResource(R.string.crash_button_copy))
+                                                }
+                                            }
+                                            Spacer(Modifier.height(8.dp))
+                                            Card(
+                                                colors = CardDefaults.cardColors(
+                                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                                )
+                                            ) {
+                                                Column(modifier = Modifier.padding(16.dp)) {
+                                                    if (parsed.deviceInfo.isNotEmpty()) {
+                                                        for (line in parsed.deviceInfo) {
+                                                            Text(
+                                                                text = line,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                            Spacer(Modifier.height(2.dp))
+                                                        }
+                                                        Spacer(Modifier.height(8.dp))
+                                                        Text(
+                                                            text = "---",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                        Spacer(Modifier.height(8.dp))
+                                                    }
+                                                    Text(
+                                                        text = parsed.stackTrace,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        Box(
+                                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(stringResource(R.string.crash_unexpected_error))
+                                        }
+                                    }
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                val intent = Intent(this@CrashReportActivity, MainActivity::class.java)
+                                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                                                startActivity(intent)
+                                                finish()
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(stringResource(R.string.button_restart_app))
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = {
+                                                finishAndRemoveTask()
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(stringResource(R.string.button_close_app))
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
-                ) { padding ->
-                    Column(Modifier.padding(padding)) {
-                        if (!crashReport.isNullOrBlank()) {
-                            val parsed = parseCrashReport(crashReport)
 
-                            Column(
-                                Modifier
-                                    .weight(1f)
-                                    .verticalScroll(rememberScrollState())
-                                    .fillMaxWidth()
-                                    .padding(16.dp)
-                            ) {
-                                Text(
-                                    text = "${stringResource(R.string.crash_label_exception)}${parsed.exception}",
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    text = "${stringResource(R.string.crash_label_message)}${parsed.message}",
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
-                                Spacer(Modifier.height(16.dp))
-                                Divider()
-                                Spacer(Modifier.height(16.dp))
-                                Text(
-                                    text = stringResource(R.string.crash_label_stacktrace),
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                Card(
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                    )
-                                ) {
-                                    Text(
-                                        text = parsed.stackTrace,
-                                        modifier = Modifier.padding(16.dp),
-                                        fontFamily = FontFamily.Monospace,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Spacer(Modifier.height(16.dp))
-                                Divider()
-                                Spacer(Modifier.height(16.dp))
-                                Text(
-                                    text = stringResource(R.string.crash_label_device_info),
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                for (line in parsed.deviceInfo) {
-                                    Text(
-                                        text = line,
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                }
-                            }
-                        } else {
-                            Box(
-                                modifier = Modifier.weight(1f).fillMaxWidth(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(stringResource(R.string.crash_unexpected_error))
-                            }
-                        }
-
-                        Row(
+                    if (snackbarMessage != null) {
+                        Text(
+                            text = snackbarMessage!!,
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .align(Alignment.BottomStart)
                                 .padding(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = {
-                                    val intent = Intent(this@CrashReportActivity, MainActivity::class.java)
-                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                                    startActivity(intent)
-                                    finish()
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(stringResource(R.string.button_restart_app))
-                            }
-
-                            OutlinedButton(
-                                onClick = {
-                                    finishAndRemoveTask()
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(stringResource(R.string.button_close_app))
-                            }
-                        }
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
