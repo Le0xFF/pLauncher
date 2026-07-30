@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import com.le0xff.plauncher.data.AppDataStore
 import com.le0xff.plauncher.model.LaunchApp
+import com.le0xff.plauncher.model.SortOrder
 import com.le0xff.plauncher.ui.AppTheme
 import com.le0xff.plauncher.ui.AppPickerDialog
 import com.le0xff.plauncher.ui.AppScreen
@@ -110,6 +111,14 @@ class AppViewModel : ViewModel() {
         val item = reordered.removeAt(fromIndex)
         reordered.add(toIndex, item)
         return reordered
+    }
+
+    fun sortApps(order: SortOrder): List<LaunchApp> {
+        return _apps.value.sortedWith(
+            compareBy<LaunchApp> { it.displayName.lowercase() }.thenBy { it.packageName }
+        ).let { sorted ->
+            if (order == SortOrder.Descending) sorted.reversed() else sorted
+        }
     }
 
     fun onActivityResume() {
@@ -266,6 +275,17 @@ class MainActivity : ComponentActivity() {
                                     dataStore.saveApps(reordered)
                                     coroutineScope.launch {
                                         senderHelper.sendAppList(reordered, null)
+                                    }
+                                    sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
+                                }
+                            },
+                            onSortApps = { order ->
+                                val sorted = viewModel.sortApps(order)
+                                if (sorted !== apps) {
+                                    viewModel.setApps(sorted)
+                                    dataStore.saveApps(sorted)
+                                    coroutineScope.launch {
+                                        senderHelper.sendAppList(sorted, null)
                                     }
                                     sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                                 }
