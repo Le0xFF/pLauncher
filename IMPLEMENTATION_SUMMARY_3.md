@@ -190,6 +190,10 @@ Added the ability to manually reorder apps in the Home screen (`AppScreen.kt`) o
 - `Modifier.graphicsLayer` with lambda takes `GraphicsLayerScope` — use `translationY` (not `Modifier.offset`) to move at the compositor level for proper draw ordering.
 - `Modifier.shadow()` is a layout modifier that does not change draw order — replaced with `graphicsLayer { shadowElevation = ... }`.
 
+**Debug refinements**:
+- Initial implementation used `Modifier.offset` which rendered the dragged item **under** siblings due to `LazyColumn` draw order. Fixed by switching to `graphicsLayer { translationY = ... }` which promotes to a separate GPU layer.
+- Initial implementation used `surfaceVariant` for the dragged item background, which is pure black in AMOLED theme (invisible). Fixed by using `surfaceContainer` (`0xFF1A1A1A` in AMOLED).
+
 **Unchanged**: `LaunchApp` model, `AppDataStore` persistence format, `AppPickerDialog`, `SettingsScreen`, theme handling, permission dialogs, Pebble protocol, rename dialog, remove confirmation. All existing features remain fully functional.
 
 #### Layout
@@ -355,6 +359,120 @@ The "Crash" button in the Debug section calls `throw RuntimeException("Test cras
 | Watch App (C) | 0 | 0 (unchanged) |
 | Android App (Kotlin) | 4 | ~100 (strings added, SettingsScreen restructured, CrashApplication handler fixed, CrashReportActivity enhanced) |
 | **Total** | **4** | **~100** |
+
+#### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+---
+
+## #14 — Home Screen: Material3 Search Bar + Alphabetical Sort
+
+### Overview
+
+Improved the Home screen search bar styling and added an alphabetical sort feature. The search field was changed from `OutlinedTextField` to Material3 `TextField` with a pill shape (`RoundedCornerShape(28.dp)`) and transparent indicator line. A sort button (`Icons.Filled.SortByAlpha`) was added to the right of the search field, opening a `DropdownMenu` with two options: "Alphabetical" (A-Z) and "Alphabetical (Z-A)". The sort reorders all apps by `displayName` (case-insensitive, ties broken by `packageName`), persists the new order to `SharedPreferences`, and syncs to the Pebble watch.
+
+### Analysis
+
+- **Previous state**: The search field used `OutlinedTextField` with `padding(16.dp)` on all sides, taking the full width of the screen. No automatic sort was available — the only way to reorder apps was manual drag-and-drop (#12) or the picker dialog.
+- **Search bar styling**: Replaced `OutlinedTextField` with `TextField` (filled variant) for a more compact Material3 appearance. Applied `RoundedCornerShape(28.dp)` for a pill shape. Reduced padding from `16.dp` all around to `horizontal = 16.dp, vertical = 8.dp` to tighten the header area. Removed the default indicator line (horizontal underline) by setting all four indicator color states to `Color.Transparent` via `TextFieldDefaults.colors().copy(...)`.
+- **Sort button**: Placed to the right of the search field in the same `Row`, using `IconButton` with `Icons.Filled.SortByAlpha` (`24.dp`). Opens a `DropdownMenu` with two items. Uses a wrapper `Box` to position the dropdown relative to the button.
+- **Sort logic**: Pure function `sortApps(order: SortOrder): List<LaunchApp>` in the ViewModel. Sorts by `displayName.lowercase()` first, then `packageName` as tiebreaker. `SortOrder.Descending` reverses the sorted list. The `SortOrder` enum (`Ascending`, `Descending`) is defined in `LaunchApp.kt` alongside the `LaunchApp` data class.
+- **Architecture**: Follows the same pattern as reorder: ViewModel exposes pure function, `MainActivity` handles persistence and sync. The callback `onSortApps: (SortOrder) -> Unit` is passed to `AppScreen`.
+
+### Android Companion App (`apk/`) — ~60 lines changed across 4 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `res/values/strings.xml` | Added `appscreen_sort_menu` ("Sort"), `appscreen_sort_ascending` ("Alphabetical"), `appscreen_sort_descending` ("Alphabetical (Z-A)"). |
+| `model/LaunchApp.kt` | Added `SortOrder` enum with `Ascending` and `Descending` values. |
+| `MainActivity.kt` | Added `sortApps(order: SortOrder): List<LaunchApp>` pure function to `AppViewModel`. Wired `onSortApps` callback in `AppScreen` call: computes sorted list, updates ViewModel, persists to DataStore, sends to Pebble, broadcasts to PebbleListenerService. |
+| `ui/AppScreen.kt` | Replaced `OutlinedTextField` with Material3 `TextField` in a `Row` with reduced padding. Added `shape = RoundedCornerShape(28.dp)` and `TextFieldDefaults.colors().copy(...)` with all indicator colors set to `Color.Transparent`. Added sort button (`IconButton` with `Icons.Filled.SortByAlpha`) in the same row. Added `DropdownMenu` with two `DropdownMenuItem` entries. Added `onSortApps: (SortOrder) -> Unit` parameter. Added imports for `Color`, `TextFieldDefaults`, `Icons.Filled.SortByAlpha`, `SortOrder`. |
+
+#### Key Implementation Details
+
+**Search bar redesign**:
+- Changed from `OutlinedTextField` to `TextField` for a filled, compact appearance.
+- `shape = RoundedCornerShape(28.dp)` creates a pill-shaped field.
+- Padding reduced from full `16.dp` to a `Row` with `horizontal = 16.dp, vertical = 8.dp`, placing the search and sort button on the same line.
+- `TextFieldDefaults.colors().copy(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent, errorIndicatorColor = Color.Transparent)` removes the horizontal indicator line that `TextField` draws by default.
+- `TextFieldDefaults.colors()` returns the default color palette; `.copy()` overrides only the indicator colors, preserving all other defaults (text color, cursor color, placeholder color, etc.).
+
+**Sort button and menu**:
+- `IconButton` with `Icons.Filled.SortByAlpha` (the "A-Z with arrow" icon), `48.dp` hit area, `24.dp` icon size.
+- Wrapped in a `Box` to anchor the `DropdownMenu` to the button's position.
+- `DropdownMenu` toggles via `showSortMenu` state. Dismisses on menu item selection or outside tap.
+- Two menu items: "Alphabetical" calls `onSortApps(SortOrder.Ascending)`, "Alphabetical (Z-A)" calls `onSortApps(SortOrder.Descending)`.
+
+**ViewModel sort function**:
+```kotlin
+fun sortApps(order: SortOrder): List<LaunchApp> {
+    return _apps.value.sortedWith(
+        compareBy<LaunchApp> { it.displayName.lowercase() }.thenBy { it.packageName }
+    ).let { sorted ->
+        if (order == SortOrder.Descending) sorted.reversed() else sorted
+    }
+}
+```
+- Primary sort: `displayName.lowercase()` (case-insensitive alphabetical).
+- Secondary sort: `packageName` (deterministic tiebreaker for same-named apps).
+- `SortOrder.Descending` reverses the entire sorted list.
+- Pure function: returns new list, does not modify `_apps.value`.
+
+**Sync on sort**: Follows the exact pattern of reorder/rename:
+1. `viewModel.sortApps(order)` computes the sorted list.
+2. `sorted !== apps` check avoids redundant operations.
+3. `viewModel.setApps(sorted)` updates UI state.
+4. `dataStore.saveApps(sorted)` persists to SharedPreferences.
+5. `senderHelper.sendAppList(sorted, null)` sends to Pebble (async).
+6. `sendBroadcast(PebbleListenerService.ACTION_SEND_APP_LIST)` notifies the running service.
+
+**Compose API notes** (BOM 2025.02.00 / foundation 1.11.2):
+- `TextFieldDefaults.colors()` returns a `TextFieldColors` with all defaults populated.
+- `TextFieldColors` has no no-arg constructor — must use `TextFieldDefaults.colors().copy(...)` to override specific properties.
+- `TextFieldDefaults.colors().copy()` accepts all 30+ color parameters with default values via Kotlin's `$default` mechanism, allowing partial overrides.
+
+**Unchanged**: `LaunchApp` data class fields, `AppDataStore` persistence format, `AppPickerDialog`, `SettingsScreen`, theme handling, permission dialogs, Pebble protocol, rename dialog, remove confirmation, drag-to-reorder. All existing features remain fully functional.
+
+#### Layout
+
+```
+┌─────────────────────────────────┐
+│ ┌──────────────────────┐ [A-Z] │  ← pill TextField + sort button
+│ │ Search...            │       │
+│ └──────────────────────┘       │
+│                                 │
+│ [::] [icon] Block Drop  [✎] [🗑]│
+│        com.blockdrop.game       │
+│  ───────────────────────────    │
+│ [::] [icon] Breakout 71 [✎] [🗑]│
+│        me.lecaro.breakout       │
+│  ───────────────────────────    │
+│ [::] [icon] TIDAL     [✎] [🗑] │
+│        com.aspiro.tidal         │
+│                                 │
+│                    [+ Add App]  │  ← FAB
+└─────────────────────────────────┘
+```
+
+Sort dropdown:
+```
+┌────────────────────┐
+│ Alphabetical       │
+│ Alphabetical (Z-A) │
+└────────────────────┘
+```
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 0 | 0 (unchanged) |
+| Android App (Kotlin) | 4 | ~60 (strings added, SortOrder enum, ViewModel method + callback in MainActivity, search bar redesign + sort dropdown in AppScreen) |
+| **Total** | **4** | **~60** |
 
 #### Build Status
 
