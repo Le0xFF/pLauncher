@@ -77,4 +77,7 @@
     <string name="rename_button_save">Save</string>
     <string name="rename_button_reset">Default</string>
     <string name="appscreen_drag_handle">Reorder</string>
+    <string name="appscreen_sort_menu">Sort</string>
+    <string name="appscreen_sort_ascending">Alphabetical</string>
+    <string name="appscreen_sort_descending">Alphabetical (Z-A)</string>
 </resources>
