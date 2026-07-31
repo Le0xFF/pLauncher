@@ -3,6 +3,7 @@
 
 #include <pebble.h>
 
+bool packets_is_loading(void);
 void packets_init(void);
 void packets_deinit(void);
 void send_watch_welcome(void);
