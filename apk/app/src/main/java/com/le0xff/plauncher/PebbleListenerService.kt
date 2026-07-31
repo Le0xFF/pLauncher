@@ -30,6 +30,7 @@ class PebbleListenerService : BasePebbleListenerService() {
         private const val CHANNEL_ID = "pebble_connection"
         private const val NOTIFICATION_ID = 27
         const val ACTION_SEND_APP_LIST = "com.le0xff.plauncher.SEND_APP_LIST"
+        private const val EXTRA_RESULT = "result"
     }
 
     private var senderHelper: PebbleSenderHelper? = null
@@ -49,6 +50,16 @@ class PebbleListenerService : BasePebbleListenerService() {
         }
     }
 
+    private val launchResultReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val result = intent?.getIntExtra(EXTRA_RESULT, 0) ?: 0
+            val success = result == 1
+            coroutineScope.launch {
+                senderHelper?.sendLaunchConfirm(success)
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         senderHelper = PebbleSenderHelper(applicationContext)
@@ -63,6 +74,9 @@ class PebbleListenerService : BasePebbleListenerService() {
 
         val filter = IntentFilter(ACTION_SEND_APP_LIST)
         registerReceiver(updateReceiver, filter)
+
+        val launchFilter = IntentFilter(LaunchActivity.ACTION_LAUNCH_RESULT)
+        registerReceiver(launchResultReceiver, launchFilter)
 
         createChannel()
         startForeground(NOTIFICATION_ID, buildNotification(applicationContext.getString(R.string.notif_waiting)))
@@ -82,6 +96,11 @@ class PebbleListenerService : BasePebbleListenerService() {
     override fun onDestroy() {
         try {
             unregisterReceiver(updateReceiver)
+        } catch (e: IllegalArgumentException) {
+            // Receiver not registered
+        }
+        try {
+            unregisterReceiver(launchResultReceiver)
         } catch (e: IllegalArgumentException) {
             // Receiver not registered
         }
@@ -123,6 +142,8 @@ class PebbleListenerService : BasePebbleListenerService() {
             dataStore?.reloadApps()
             val apps = dataStore?.apps?.value ?: emptyList()
             helper.sendAppList(apps, watch)
+            val pref = dataStore?.getVibrationPref() ?: 0
+            helper.sendVibrationPref(pref.toUInt())
         }
         updateNotification(getString(R.string.status_connected))
         return ReceiveResult.Ack

@@ -9,6 +9,28 @@ static AppTimer* s_response_timer = NULL;
 static uint8_t s_current_transfer_id = 0;
 static bool s_loading = false;
 
+#define PERSIST_KEY_VIBRATION_PREF 0x01
+static uint8_t s_vibration_pref = VIBE_NONE;
+
+static void save_vibration_pref(uint8_t pref) {
+    s_vibration_pref = pref;
+    persist_write_int(PERSIST_KEY_VIBRATION_PREF, (int32_t)pref);
+    APP_LOG(APP_LOG_LEVEL_INFO, "Saved vibration pref: %d", pref);
+}
+
+void load_vibration_pref(void) {
+    if (persist_exists(PERSIST_KEY_VIBRATION_PREF)) {
+        s_vibration_pref = (uint8_t)persist_read_int(PERSIST_KEY_VIBRATION_PREF);
+    } else {
+        s_vibration_pref = VIBE_NONE;
+    }
+    APP_LOG(APP_LOG_LEVEL_INFO, "Loaded vibration pref: %d", s_vibration_pref);
+}
+
+uint8_t packets_get_vibration_pref(void) {
+    return s_vibration_pref;
+}
+
 static void outbound_sent_handler(DictionaryIterator* iter, void* context) {
 }
 
@@ -33,7 +55,7 @@ static void handle_phone_welcome(DictionaryIterator* iter) {
     s_current_transfer_id = 0;
     s_loading = false;
 
-    Tuple* t = dict_find(iter, 1);
+    Tuple* t = dict_find(iter, KEY_PROTOCOL_VERSION);
     if (t) {
         uint16_t version = t->value->uint16;
         if (version != 1) {
@@ -45,7 +67,7 @@ static void handle_phone_welcome(DictionaryIterator* iter) {
 }
 
 static void handle_app_list(DictionaryIterator* iter) {
-    Tuple* idTuple = dict_find(iter, 6);
+    Tuple* idTuple = dict_find(iter, KEY_TRANSFER_ID);
     uint8_t transfer_id = idTuple ? idTuple->value->uint8 : 0;
 
     if (transfer_id < s_current_transfer_id) {
@@ -59,9 +81,9 @@ static void handle_app_list(DictionaryIterator* iter) {
         APP_LOG(APP_LOG_LEVEL_INFO, "New transfer started (id=%d)", transfer_id);
     }
 
-    Tuple* offsetTuple = dict_find(iter, 8);
-    Tuple* completeTuple = dict_find(iter, 9);
-    Tuple* countTuple = dict_find(iter, 3);
+    Tuple* offsetTuple = dict_find(iter, KEY_OFFSET);
+    Tuple* completeTuple = dict_find(iter, KEY_COMPLETION);
+    Tuple* countTuple = dict_find(iter, KEY_APP_COUNT);
 
     bool is_last = (completeTuple && completeTuple->value->uint8 == 1);
     bool is_first = (!offsetTuple || offsetTuple->value->uint16 == 0);
@@ -74,8 +96,8 @@ static void handle_app_list(DictionaryIterator* iter) {
         }
     }
 
-    Tuple* nameTuple = dict_find(iter, 4);
-    Tuple* pkgTuple = dict_find(iter, 5);
+    Tuple* nameTuple = dict_find(iter, KEY_APP_NAME);
+    Tuple* pkgTuple = dict_find(iter, KEY_APP_PACKAGE);
 
     if (nameTuple && pkgTuple) {
         app_list_add(nameTuple->value->cstring, pkgTuple->value->cstring);
@@ -91,8 +113,43 @@ static void handle_app_list(DictionaryIterator* iter) {
     }
 }
 
+static void handle_vibration_pref(DictionaryIterator* iter) {
+    Tuple* t = dict_find(iter, KEY_VIBRATION_PREF);
+    if (t) {
+        uint8_t pref = t->value->uint8;
+        save_vibration_pref(pref);
+    }
+}
+
+static void handle_launch_confirm(DictionaryIterator* iter) {
+    Tuple* t = dict_find(iter, KEY_LAUNCH_CONFIRM);
+    if (!t) {
+        return;
+    }
+
+    uint8_t confirm = t->value->uint8;
+
+    if (confirm == 1) {
+        uint8_t pref = packets_get_vibration_pref();
+        if (pref == VIBE_SHORT) {
+            vibes_short_pulse();
+            APP_LOG(APP_LOG_LEVEL_INFO, "Launch confirm: short pulse");
+        } else if (pref == VIBE_LONG) {
+            vibes_long_pulse();
+            APP_LOG(APP_LOG_LEVEL_INFO, "Launch confirm: long pulse");
+        } else if (pref == VIBE_DOUBLE) {
+            vibes_double_pulse();
+            APP_LOG(APP_LOG_LEVEL_INFO, "Launch confirm: double pulse");
+        } else {
+            APP_LOG(APP_LOG_LEVEL_INFO, "Launch confirm: no vibration (pref=%d)", pref);
+        }
+    } else {
+        APP_LOG(APP_LOG_LEVEL_INFO, "Launch confirm: failure, no vibration");
+    }
+}
+
 static void inbox_received_handler(DictionaryIterator* iter, void* context) {
-    Tuple* typeTuple = dict_find(iter, 0);
+    Tuple* typeTuple = dict_find(iter, KEY_PACKET_TYPE);
     if (!typeTuple) {
         APP_LOG(APP_LOG_LEVEL_ERROR, "Received packet without type");
         return;
@@ -101,11 +158,17 @@ static void inbox_received_handler(DictionaryIterator* iter, void* context) {
     uint8_t packet_type = typeTuple->value->uint8;
 
     switch (packet_type) {
-        case 10:  // Phone Welcome
+        case PACKET_TYPE_PHONE_WELCOME:
             handle_phone_welcome(iter);
             break;
-        case 11:  // App List
+        case PACKET_TYPE_APP_LIST:
             handle_app_list(iter);
+            break;
+        case PACKET_TYPE_LAUNCH_CONFIRM:
+            handle_launch_confirm(iter);
+            break;
+        case PACKET_TYPE_VIBRATION_PREF:
+            handle_vibration_pref(iter);
             break;
         default:
             APP_LOG(APP_LOG_LEVEL_ERROR, "Unknown packet type: %d", packet_type);
@@ -140,8 +203,8 @@ void request_app_list(void) {
 void send_watch_welcome(void) {
     DictionaryIterator* iter;
     if (app_message_outbox_begin(&iter) == APP_MSG_OK) {
-        dict_write_uint16(iter, 1, 1);
-        dict_write_uint8(iter, 0, 0);
+        dict_write_uint16(iter, KEY_PROTOCOL_VERSION, 1);
+        dict_write_uint8(iter, KEY_PACKET_TYPE, PACKET_TYPE_WATCH_WELCOME);
         app_message_outbox_send();
     }
 }
@@ -149,8 +212,8 @@ void send_watch_welcome(void) {
 void send_launch_app(uint8_t index) {
     DictionaryIterator* iter;
     if (app_message_outbox_begin(&iter) == APP_MSG_OK) {
-        dict_write_uint8(iter, 0, 1);
-        dict_write_uint8(iter, 2, index);
+        dict_write_uint8(iter, KEY_PACKET_TYPE, PACKET_TYPE_LAUNCH_APP);
+        dict_write_uint8(iter, KEY_APP_INDEX, index);
         app_message_outbox_send();
     }
 }

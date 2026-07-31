@@ -67,6 +67,9 @@ class AppViewModel : ViewModel() {
     private val _resumeCounter = MutableStateFlow(0)
     val resumeCounter: StateFlow<Int> = _resumeCounter.asStateFlow()
 
+    private val _vibrationPref = MutableStateFlow(0)
+    val vibrationPref: StateFlow<Int> = _vibrationPref.asStateFlow()
+
     fun setApps(newApps: List<LaunchApp>) {
         _apps.value = newApps
     }
@@ -122,6 +125,10 @@ class AppViewModel : ViewModel() {
         }
     }
 
+    fun setVibrationPref(value: Int) {
+        _vibrationPref.value = value
+    }
+
     fun onActivityResume() {
         _resumeCounter.value++
     }
@@ -156,6 +163,7 @@ class MainActivity : ComponentActivity() {
                 val renameAppTarget by viewModel.renameAppTarget.collectAsState()
                 val connectionStatus by viewModel.connectionStatus.collectAsState()
                 val resumeCounter by viewModel.resumeCounter.collectAsState()
+                val vibrationPref by viewModel.vibrationPref.collectAsState()
 
                 val initialStatus = stringResource(R.string.status_disconnected)
                 LaunchedEffect(Unit) {
@@ -163,6 +171,7 @@ class MainActivity : ComponentActivity() {
                     viewModel.setShowSystemApps(dataStore.getShowSystemApps())
                     viewModel.setGenerateCrashReports(dataStore.getGenerateCrashReports())
                     viewModel.setAppTheme(dataStore.getAppTheme())
+                    viewModel.setVibrationPref(dataStore.getVibrationPref())
                     viewModel.setConnectionStatus(initialStatus)
                 }
 
@@ -322,6 +331,14 @@ class MainActivity : ComponentActivity() {
                             onThemeChange = {
                                 viewModel.setAppTheme(it)
                                 dataStore.setAppTheme(it)
+                            },
+                            vibrationPref = vibrationPref,
+                            onVibrationPrefChange = {
+                                viewModel.setVibrationPref(it)
+                                dataStore.setVibrationPref(it)
+                                coroutineScope.launch {
+                                    senderHelper.sendVibrationPref(it.toUInt())
+                                }
                             },
                             modifier = Modifier.padding(padding)
                         )
