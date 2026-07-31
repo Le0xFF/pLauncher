@@ -105,10 +105,15 @@ class PebbleListenerService : BasePebbleListenerService() {
             else -> return ReceiveResult.Nack
         }
 
-        return when (packetType) {
+        wakeLock?.let { if (!it.isHeld) it.acquire() }
+        return try {
+            when (packetType) {
             0 -> handleWatchWelcome(watch)
             1 -> handleLaunchApp(data, watch)
             else -> ReceiveResult.Nack
+            }
+        } finally {
+            wakeLock?.let { if (it.isHeld) it.release() }
         }
     }
 
@@ -119,7 +124,6 @@ class PebbleListenerService : BasePebbleListenerService() {
             val apps = dataStore?.apps?.value ?: emptyList()
             helper.sendAppList(apps, watch)
         }
-        wakeLock?.let { if (!it.isHeld) it.acquire() }
         updateNotification(getString(R.string.status_connected))
         return ReceiveResult.Ack
     }
@@ -152,7 +156,6 @@ class PebbleListenerService : BasePebbleListenerService() {
     }
 
     override fun onAppClosed(watchappUUID: UUID, watch: WatchIdentifier) {
-        wakeLock?.let { if (it.isHeld) it.release() }
         updateNotification(getString(R.string.notif_disconnected))
     }
 
