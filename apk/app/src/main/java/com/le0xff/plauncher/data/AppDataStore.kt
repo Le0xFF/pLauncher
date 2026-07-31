@@ -16,6 +16,7 @@ class AppDataStore(private val context: Context) {
         private const val KEY_GENERATE_CRASH_REPORTS = "generate_crash_reports"
         private const val KEY_THEME = "theme"
         private const val KEY_VIBRATION_PREF = "vibration_pref"
+        private const val KEY_AUTO_CLOSE = "auto_close"
         private const val SEP = "|"
         private const val LINE_SEP = "\n"
     }
@@ -34,6 +35,9 @@ class AppDataStore(private val context: Context) {
 
     private val _vibrationPref = MutableStateFlow<Int>(loadVibrationPref())
     val vibrationPref: StateFlow<Int> = _vibrationPref
+
+    private val _autoClose = MutableStateFlow<Boolean>(loadAutoClose())
+    val autoClose: StateFlow<Boolean> = _autoClose
 
     fun saveApps(apps: List<LaunchApp>) {
         _apps.value = apps
@@ -96,5 +100,16 @@ class AppDataStore(private val context: Context) {
 
     private fun loadVibrationPref(): Int {
         return prefs.getInt(KEY_VIBRATION_PREF, 0)
+    }
+
+    fun getAutoClose(): Boolean = _autoClose.value
+
+    fun setAutoClose(value: Boolean) {
+        _autoClose.value = value
+        prefs.edit().putBoolean(KEY_AUTO_CLOSE, value).apply()
+    }
+
+    private fun loadAutoClose(): Boolean {
+        return prefs.getBoolean(KEY_AUTO_CLOSE, false)
     }
 }
