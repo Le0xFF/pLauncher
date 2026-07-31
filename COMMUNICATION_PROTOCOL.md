@@ -17,6 +17,7 @@ Watch and companion app communicate via Pebble AppMessage using numeric dictiona
 | 9   | UInt8  | Phone → Watch   | Completion flag (1 = last chunk)     |
 | 10  | UInt8  | Phone → Watch   | Launch confirm flag (1 = success, 0 = failure) |
 | 11  | UInt8  | Phone → Watch   | Vibration preference (0 = None, 1 = Short, 2 = Long, 3 = Double) |
+| 12  | UInt8  | Phone → Watch   | Auto-close preference (1 = enabled, 0 = disabled) |
 
 ## Packet Types
 
@@ -29,6 +30,7 @@ Watch and companion app communicate via Pebble AppMessage using numeric dictiona
 - `11`: App List — keys: `3` (count), then pairs of `4`/`5` per app
 - `12`: Launch Confirm — keys: `10` (confirm flag uint8, 1 = success, 0 = failure)
 - `13`: Vibration Preference — keys: `11` (vibration pref uint8, 0 = None, 1 = Short, 2 = Long, 3 = Double)
+- `14`: Auto-Close Preference — keys: `12` (auto-close flag uint8, 1 = enabled, 0 = disabled)
 
 ## Protocol Version
 
@@ -45,4 +47,4 @@ If the app list exceeds AppMessage size limits (~1400 bytes), send multiple pack
 
 ## Settings
 
-No settings sync from watch to phone. The watch only launches apps. Settings (e.g., "show system apps") are managed entirely in the Android companion app.
+No settings sync from watch to phone. The watch only launches apps. Settings (e.g., "show system apps") are managed entirely in the Android companion app. The vibration preference and auto-close preference are synchronized from the phone to the watch on connection and when changed.
