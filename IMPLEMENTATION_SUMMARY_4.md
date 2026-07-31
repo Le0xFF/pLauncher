@@ -246,3 +246,154 @@ The ID wraps at 256 (UInt8). Each `PebbleSenderHelper` instance maintains its ow
 
 - Watch app: `pebble build` — compiles cleanly for `basalt` and `emery`, zero warnings (pre-existing truncation warning fixed)
 - Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+---
+
+## #18 — Launch Confirmation Vibration Feedback
+
+### Overview
+
+Added haptic vibration feedback on the Pebble watch when an Android app is successfully launched from the companion app. The user configures the vibration type (None, Short, Long, Double) via a dropdown in a new "Watchapp settings" section of the companion app's Settings screen. Preferences are synchronized bidirectionally: changes in the companion app immediately sync to the watch, and the watch persists the preference across reboots. On watch connection, the companion app sends the current preference.
+
+### Analysis
+
+- **Previous state**: The watch launched apps via AppMessage (packet type 1) but received no confirmation. The companion app called `startActivity()` in `LaunchActivity` with no feedback to the watch. No settings UI existed on either side for vibration.
+- **Protocol**: Added packet type 12 (Launch Confirm) and packet type 13 (Vibration Preference), plus keys 10 and 11. All existing hardcoded packet/key numbers in the watch app were replaced with named `#define` constants for maintainability.
+- **Watch persistence**: Vibration preference stored in Pebble's PersistentKeyStore (`persist_*` API), loaded on boot, defaulting to None.
+- **Launch confirmation**: `LaunchActivity` wraps `startActivity()` in try-catch, broadcasts result to `PebbleListenerService`, which sends packet 12 to the watch. The watch triggers `vibes_short_pulse()`, `vibes_long_pulse()`, or `vibes_double_pulse()` based on saved preference.
+- **UI**: New "Watchapp settings" accordion card in Settings screen with a compact dropdown (Text + icon, not full TextField) for vibration selection, positioned between "General" and "Permissions".
+
+### Watch App (`pbw/`) — ~60 lines changed across 3 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `src/c/packets.h` | Added `#define` constants for all packet types (0, 1, 10, 11, 12, 13), all keys (0–11), and vibration values (0–3). Added declarations for `load_vibration_pref()` and `packets_get_vibration_pref()`. |
+| `src/c/packets.c` | Replaced all hardcoded packet/key numbers with named constants. Added `s_vibration_pref` static variable and `PERSIST_KEY_VIBRATION_PREF`. Implemented `save_vibration_pref()`, `load_vibration_pref()`, `packets_get_vibration_pref()` using `persist_*` API. Added `handle_vibration_pref()` (receives packet 13, saves preference) and `handle_launch_confirm()` (receives packet 12, triggers vibration based on preference). Added switch cases for new packet types in `inbox_received_handler`. |
+| `src/c/pLauncher.c` | Added `load_vibration_pref()` call in `init()` after `packets_init()`. |
+
+#### Key Implementation Details
+
+**Protocol constants** (`packets.h`):
+```c
+#define PACKET_TYPE_LAUNCH_CONFIRM 12
+#define PACKET_TYPE_VIBRATION_PREF 13
+#define KEY_LAUNCH_CONFIRM 10
+#define KEY_VIBRATION_PREF 11
+#define VIBE_NONE 0, VIBE_SHORT 1, VIBE_LONG 2, VIBE_DOUBLE 3
+```
+
+**Persistence** (`packets.c`):
+```c
+static uint8_t s_vibration_pref = VIBE_NONE;
+
+void load_vibration_pref(void) {
+    if (persist_exists(PERSIST_KEY_VIBRATION_PREF))
+        s_vibration_pref = (uint8_t)persist_read_int(PERSIST_KEY_VIBRATION_PREF);
+    else
+        s_vibration_pref = VIBE_NONE;
+}
+```
+
+**Launch confirm handler** (`packets.c`):
+```c
+static void handle_launch_confirm(DictionaryIterator* iter) {
+    Tuple* t = dict_find(iter, KEY_LAUNCH_CONFIRM);
+    if (!t) return;
+    uint8_t confirm = t->value->uint8;
+    if (confirm == 1) {
+        uint8_t pref = packets_get_vibration_pref();
+        switch (pref) {
+            case VIBE_SHORT: vibes_short_pulse(); break;
+            case VIBE_LONG: vibes_long_pulse(); break;
+            case VIBE_DOUBLE: vibes_double_pulse(); break;
+        }
+    }
+}
+```
+
+### Android Companion App (`apk/`) — ~90 lines changed across 6 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `res/values/strings.xml` | Added 7 strings: `settings_section_watchapp`, `settings_vibration`, `settings_vibration_desc`, `settings_vibration_none`, `settings_vibration_short`, `settings_vibration_long`, `settings_vibration_double`. |
+| `data/AppDataStore.kt` | Added `KEY_VIBRATION_PREF`, `MutableStateFlow<Int>` for vibration pref, `getVibrationPref()`, `setVibrationPref()`, `loadVibrationPref()` (default 0). |
+| `MainActivity.kt` | Added `_vibrationPref` and `vibrationPref` StateFlow to `AppViewModel`, `setVibrationPref()`. Load from DataStore in `LaunchedEffect`. Pass `vibrationPref` and `onVibrationPrefChange` to `SettingsScreen`. Callback saves to DataStore and sends packet 13 via `senderHelper.sendVibrationPref()`. |
+| `ui/SettingsScreen.kt` | Added `vibrationPref` and `onVibrationPrefChange` parameters. Added "Watchapp settings" accordion card between General and Permissions. Compact dropdown using Row + Text + Icon (not TextField) with `wrapContentWidth()`-sized layout. |
+| `PebbleSenderHelper.kt` | Added `sendVibrationPref(pref: UInt)` (packet 13, key 11) and `sendLaunchConfirm(success: Boolean)` (packet 12, key 10). |
+| `LaunchActivity.kt` | Wrapped app launch in try-catch. Added `ACTION_LAUNCH_RESULT` broadcast with success/failure result. Sends broadcast before `finish()`. |
+| `PebbleListenerService.kt` | Added `launchResultReceiver` BroadcastReceiver for `ACTION_LAUNCH_RESULT`. Calls `senderHelper.sendLaunchConfirm()` on receive. Registered in `onCreate()`, unregistered in `onDestroy()`. Modified `handleWatchWelcome()` to send vibration pref after app list. |
+
+#### Key Implementation Details
+
+**Vibration dropdown** (`SettingsScreen.kt`):
+Compact Row-based dropdown (not full-width TextField):
+```kotlin
+Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+    Column(modifier = Modifier.weight(1f)) {
+        Text("Vibration on launch")
+        Text("Haptic feedback when an app launches")
+    }
+    ExposedDropdownMenuBox {
+        Row(clickable, menuAnchor) {
+            Text(selectedValue)
+            Icon(expand/collapse)
+        }
+        ExposedDropdownMenu { options }
+    }
+}
+```
+
+**Launch result broadcast** (`LaunchActivity.kt`):
+```kotlin
+try {
+    startActivity(launchIntent)
+    sendLaunchResult(true)
+} catch (e: Exception) {
+    sendLaunchResult(false)
+}
+```
+
+**Connection sync** (`PebbleListenerService.kt`):
+On watch welcome, after sending app list, reads `dataStore.getVibrationPref()` and sends via `helper.sendVibrationPref()`.
+
+#### Layout
+
+Settings screen order:
+```
+┌─────────────────────────────────┐
+│ Settings                        │
+│                                 │
+│ ▾ General                       │
+│   Theme: [Dark          ▼]     │
+│   ─────────────────────         │
+│   Show system apps    [●]       │
+│                                 │
+│ ▸ Watchapp settings             │
+│   (expanded shows:)             │
+│   Vibration on launch           │
+│   Haptic feedback...    [None ▼]│
+│                                 │
+│ ▸ Permissions                   │
+│ ▸ Debug                         │
+│                                 │
+│               v1.0.0            │
+└─────────────────────────────────┘
+```
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 3 | ~60 (constants, persistence, handlers, switch cases) |
+| Android App (Kotlin) | 6 | ~90 (strings, data store, view model, UI, sender, activity, service) |
+| Documentation | 1 | ~10 (new packet types, keys, protocol section) |
+| **Total** | **10** | **~160** |
+
+#### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery`
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
