@@ -17,9 +17,7 @@ Two different kind of applications are available:
 - `AGENTS.md` — This file (development guidelines)
 - `COMPILE_INSTRUCTIONS.md` — Detailed build instructions for both apps
 - `COMMUNICATION_PROTOCOL.md` — AppMessage protocol specification
-- `IMPLEMENTATION_SUMMARY_1.md` — Implementation summary part 1
-- `IMPLEMENTATION_SUMMARY_2.md` — Implementation summary part 2
-- `IMPLEMENTATION_SUMMARY_3.md` — Implementation summary part 3
+- `IMPLEMENTATION_SUMMARY_*.md` — Implementation summaries (numbered parts, may grow over time)
 
 ## Package name
 
