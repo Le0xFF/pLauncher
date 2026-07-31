@@ -15,6 +15,8 @@ Watch and companion app communicate via Pebble AppMessage using numeric dictiona
 | 6   | UInt8  | Phone → Watch   | Transfer ID (for deduplication)      |
 | 8   | UInt16 | Phone → Watch   | Offset for chunked lists             |
 | 9   | UInt8  | Phone → Watch   | Completion flag (1 = last chunk)     |
+| 10  | UInt8  | Phone → Watch   | Launch confirm flag (1 = success, 0 = failure) |
+| 11  | UInt8  | Phone → Watch   | Vibration preference (0 = None, 1 = Short, 2 = Long, 3 = Double) |
 
 ## Packet Types
 
@@ -25,6 +27,8 @@ Watch and companion app communicate via Pebble AppMessage using numeric dictiona
 ### Phone → Watch
 - `10`: Phone Welcome — keys: `1` (protocol version uint16)
 - `11`: App List — keys: `3` (count), then pairs of `4`/`5` per app
+- `12`: Launch Confirm — keys: `10` (confirm flag uint8, 1 = success, 0 = failure)
+- `13`: Vibration Preference — keys: `11` (vibration pref uint8, 0 = None, 1 = Short, 2 = Long, 3 = Double)
 
 ## Protocol Version
 
