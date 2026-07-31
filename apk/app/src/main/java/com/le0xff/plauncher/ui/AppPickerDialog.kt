@@ -25,6 +25,7 @@ fun AppPickerDialog(
     showSystemApps: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (List<LaunchApp>) -> Unit,
+    maxApps: Int,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -46,9 +47,24 @@ fun AppPickerDialog(
         localSelected = selectedPackageNames
     }
 
+    val isAtLimit = localSelected.size >= maxApps
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.picker_title)) },
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.picker_title))
+                Text(
+                    "${localSelected.size}/$maxApps",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isAtLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                )
+            }
+        },
         text = {
             Column(modifier = Modifier.height(400.dp)) {
                 OutlinedTextField(
@@ -60,14 +76,21 @@ fun AppPickerDialog(
                 )
                 LazyColumn(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
                     items(filteredBySearch, key = { it.packageName }) { app ->
+                        val isSelected = localSelected.contains(app.packageName)
+                        val checkboxDisabled = isAtLimit && !isSelected
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Checkbox(
-                                checked = localSelected.contains(app.packageName),
+                                checked = isSelected,
+                                enabled = !checkboxDisabled,
                                 onCheckedChange = { checked ->
-                                    localSelected = if (checked) localSelected + app.packageName else localSelected - app.packageName
+                                    if (checked) {
+                                        localSelected = localSelected + app.packageName
+                                    } else {
+                                        localSelected = localSelected - app.packageName
+                                    }
                                 }
                             )
                             app.icon?.let {
@@ -77,7 +100,11 @@ fun AppPickerDialog(
                                     modifier = Modifier.size(24.dp).padding(end = 8.dp)
                                 )
                             }
-                            Text(app.name, modifier = Modifier.weight(1f))
+                            Text(
+                                app.name,
+                                modifier = Modifier.weight(1f),
+                                color = if (checkboxDisabled && !isSelected) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
                 }

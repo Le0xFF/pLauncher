@@ -80,4 +80,7 @@
     <string name="appscreen_sort_menu">Sort</string>
     <string name="appscreen_sort_ascending">Alphabetical</string>
     <string name="appscreen_sort_descending">Alphabetical (Z-A)</string>
+    <string name="appscreen_limit_reached">Maximum of 20 apps reached</string>
+    <string name="appscreen_app_count">App count</string>
+    <string name="picker_limit_reached">Maximum of 20 apps reached</string>
 </resources>

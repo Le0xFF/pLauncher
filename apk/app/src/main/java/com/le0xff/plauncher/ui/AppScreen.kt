@@ -40,6 +40,8 @@ fun AppScreen(
     onRenameApp: (LaunchApp) -> Unit,
     onReorderApp: (fromIndex: Int, toIndex: Int) -> Unit,
     onSortApps: (SortOrder) -> Unit,
+    appCount: Int,
+    maxApps: Int,
     modifier: Modifier = Modifier
 ) {
     val filtered = remember(apps, searchQuery) {
@@ -228,8 +230,13 @@ fun AppScreen(
             modifier = Modifier
                 .align(Alignment.End)
                 .padding(16.dp)
+                .widthIn(min = 100.dp)
         ) {
-            Text(stringResource(R.string.button_add_app))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.button_add_app))
+                Text(" | ")
+                Text("$appCount/$maxApps")
+            }
         }
     }
 }

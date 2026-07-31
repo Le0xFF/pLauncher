@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -127,6 +128,9 @@ class AppViewModel : ViewModel() {
 }
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val MAX_APPS = 20
+    }
     private val coroutineScope: CoroutineScope = MainScope()
     private val viewModel = AppViewModel()
     private lateinit var appDataStore: AppDataStore
@@ -265,7 +269,13 @@ class MainActivity : ComponentActivity() {
                             apps = apps,
                             searchQuery = searchQuery,
                             onSearchQueryChange = { viewModel.setSearchQuery(it) },
-                            onAddApp = { viewModel.setShowPicker(true) },
+                            onAddApp = {
+                                if (apps.size >= MAX_APPS) {
+                                    Toast.makeText(context, R.string.appscreen_limit_reached, Toast.LENGTH_SHORT).show()
+                                } else {
+                                    viewModel.setShowPicker(true)
+                                }
+                            },
                             onRemoveApp = { viewModel.setRemoveAppTarget(it) },
                             onRenameApp = { viewModel.setRenameAppTarget(it) },
                             onReorderApp = { fromIndex, toIndex ->
@@ -290,6 +300,8 @@ class MainActivity : ComponentActivity() {
                                     sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                                 }
                             },
+                            appCount = apps.size,
+                            maxApps = MAX_APPS,
                             modifier = Modifier.padding(padding)
                         )
                     } else {
@@ -423,6 +435,7 @@ class MainActivity : ComponentActivity() {
                             selectedApps = apps,
                             showSystemApps = showSystemApps,
                             onDismiss = { viewModel.setShowPicker(false) },
+                            maxApps = MAX_APPS,
                             onConfirm = { selectedApps ->
                                 dataStore.saveApps(selectedApps)
                                 viewModel.setApps(selectedApps)
