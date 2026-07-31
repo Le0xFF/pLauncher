@@ -3,10 +3,6 @@ package com.le0xff.plauncher.ui
 import android.content.pm.PackageManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,20 +18,17 @@ import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import com.le0xff.plauncher.R
 import com.le0xff.plauncher.model.LaunchApp
 import com.le0xff.plauncher.model.SortOrder
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @Composable
 fun AppScreen(
@@ -53,13 +46,15 @@ fun AppScreen(
         if (searchQuery.isBlank()) apps else apps.filter { it.displayName.contains(searchQuery, ignoreCase = true) }
     }
 
-    val density = LocalDensity.current
-    var measuredItemHeightPx by remember { mutableStateOf(0f) }
-
-    var draggedAppPackageName by remember { mutableStateOf<String?>(null) }
-    var dragOffsetY by remember { mutableStateOf(0f) }
-
     val listState = rememberLazyListState()
+
+    val isDragEnabled = searchQuery.isBlank()
+
+    val reorderableState = rememberReorderableLazyListState(
+        lazyListState = listState
+    ) { from, to ->
+        onReorderApp(from.index, to.index)
+    }
 
     var showSortMenu by remember { mutableStateOf(false) }
 
@@ -131,34 +126,16 @@ fun AppScreen(
                 modifier = Modifier.weight(1f),
                 state = listState
             ) {
-                items(filtered, key = { it.packageName }) { app ->
-                    val appIndexInApps = apps.indexOf(app)
-                    val isDragged = draggedAppPackageName == app.packageName
-
-                    val itemHeightPx = if (measuredItemHeightPx > 0f) measuredItemHeightPx else with(LocalDensity.current) { 64.dp.toPx() }
-
-                    val draggableState = rememberDraggableState(
-                        onDelta = { delta ->
-                            if (isDragged) {
-                                dragOffsetY += delta
-
-                                val itemsCrossed = (dragOffsetY / itemHeightPx).toInt()
-                                if (itemsCrossed != 0) {
-                                    val fromIdx = apps.indexOfFirst { it.packageName == draggedAppPackageName }
-                                    if (fromIdx >= 0) {
-                                        val toIndex = (fromIdx + itemsCrossed).coerceIn(0, apps.size - 1)
-                                        onReorderApp(fromIdx, toIndex)
-                                        dragOffsetY = 0f
-                                    }
-                                }
-                            }
-                        }
-                    )
-
+                items(filtered, key = { app -> app.packageName }) { app ->
                     if (filtered.indexOf(app) > 0) {
                         Divider(modifier = Modifier.padding(start = 16.dp))
                     }
 
+                    ReorderableItem(
+                        state = reorderableState,
+                        key = app.packageName,
+                        enabled = isDragEnabled
+                    ) { isDragging ->
                     val context = LocalContext.current
                     val iconBitmap = remember(app.packageName) {
                         try {
@@ -177,21 +154,9 @@ fun AppScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .onGloballyPositioned { layoutCoords ->
-                                if (measuredItemHeightPx <= 0f) {
-                                    measuredItemHeightPx = layoutCoords.size.height.toFloat()
-                                }
-                            }
                             .then(
-                                if (isDragged) {
-                                    Modifier
-                                        .graphicsLayer {
-                                            shadowElevation = 8.dp.toPx()
-                                            clip = true
-                                            shape = RoundedCornerShape(8.dp)
-                                            translationY = dragOffsetY
-                                        }
-                                        .background(
+                                    if (isDragging) {
+                                        Modifier.background(
                                             MaterialTheme.colorScheme.surfaceContainer,
                                             shape = RoundedCornerShape(8.dp)
                                         )
@@ -201,24 +166,11 @@ fun AppScreen(
                             ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (searchQuery.isBlank()) {
+                        if (isDragEnabled) {
                             Box(
                                 modifier = Modifier
                                     .size(56.dp)
-                                    .draggable(
-                                        orientation = Orientation.Vertical,
-                                        state = draggableState,
-                                        startDragImmediately = false,
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        onDragStarted = {
-                                            draggedAppPackageName = app.packageName
-                                            dragOffsetY = 0f
-                                        },
-                                        onDragStopped = { _: Float ->
-                                            draggedAppPackageName = null
-                                            dragOffsetY = 0f
-                                        }
-                                    )
+                                        .draggableHandle()
                             ) {
                                 Icon(
                                     Icons.Filled.DragIndicator,
@@ -263,6 +215,7 @@ fun AppScreen(
                                     tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(28.dp)
                                 )
+                                }
                             }
                         }
                     }

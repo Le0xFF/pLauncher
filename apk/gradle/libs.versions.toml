@@ -9,6 +9,7 @@ junit = "4.13.2"
 androidxJUnit = "1.2.1"
 espressoCore = "3.6.1"
 pebblekit2 = "1.2.0"
+reorderable = "3.1.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -24,6 +25,7 @@ androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-man
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 pebblekit2-client = { group = "io.rebble.pebblekit2", name = "client", version.ref = "pebblekit2" }
+reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxJUnit" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
