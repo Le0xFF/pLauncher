@@ -10,6 +10,7 @@
 #define PACKET_TYPE_APP_LIST 11
 #define PACKET_TYPE_LAUNCH_CONFIRM 12
 #define PACKET_TYPE_VIBRATION_PREF 13
+#define PACKET_TYPE_AUTO_CLOSE_PREF 14
 
 // AppMessage keys
 #define KEY_PACKET_TYPE 0
@@ -23,6 +24,7 @@
 #define KEY_COMPLETION 9
 #define KEY_LAUNCH_CONFIRM 10
 #define KEY_VIBRATION_PREF 11
+#define KEY_AUTO_CLOSE 12
 
 // Vibration preference values
 #define VIBE_NONE 0
@@ -38,5 +40,7 @@ void send_launch_app(uint8_t index);
 void request_app_list(void);
 void load_vibration_pref(void);
 uint8_t packets_get_vibration_pref(void);
+void load_auto_close_pref(void);
+bool packets_get_auto_close(void);
 
 #endif

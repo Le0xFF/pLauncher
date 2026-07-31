@@ -144,6 +144,8 @@ class PebbleListenerService : BasePebbleListenerService() {
             helper.sendAppList(apps, watch)
             val pref = dataStore?.getVibrationPref() ?: 0
             helper.sendVibrationPref(pref.toUInt())
+            val autoClose = dataStore?.getAutoClose() ?: false
+            helper.sendAutoClosePref(if (autoClose) 1u else 0u)
         }
         updateNotification(getString(R.string.status_connected))
         return ReceiveResult.Ack

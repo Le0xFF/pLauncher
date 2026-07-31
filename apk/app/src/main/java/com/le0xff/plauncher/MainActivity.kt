@@ -70,6 +70,9 @@ class AppViewModel : ViewModel() {
     private val _vibrationPref = MutableStateFlow(0)
     val vibrationPref: StateFlow<Int> = _vibrationPref.asStateFlow()
 
+    private val _autoClose = MutableStateFlow(false)
+    val autoClose: StateFlow<Boolean> = _autoClose.asStateFlow()
+
     fun setApps(newApps: List<LaunchApp>) {
         _apps.value = newApps
     }
@@ -129,6 +132,10 @@ class AppViewModel : ViewModel() {
         _vibrationPref.value = value
     }
 
+    fun setAutoClose(value: Boolean) {
+        _autoClose.value = value
+    }
+
     fun onActivityResume() {
         _resumeCounter.value++
     }
@@ -164,6 +171,7 @@ class MainActivity : ComponentActivity() {
                 val connectionStatus by viewModel.connectionStatus.collectAsState()
                 val resumeCounter by viewModel.resumeCounter.collectAsState()
                 val vibrationPref by viewModel.vibrationPref.collectAsState()
+                val autoClose by viewModel.autoClose.collectAsState()
 
                 val initialStatus = stringResource(R.string.status_disconnected)
                 LaunchedEffect(Unit) {
@@ -172,6 +180,7 @@ class MainActivity : ComponentActivity() {
                     viewModel.setGenerateCrashReports(dataStore.getGenerateCrashReports())
                     viewModel.setAppTheme(dataStore.getAppTheme())
                     viewModel.setVibrationPref(dataStore.getVibrationPref())
+                    viewModel.setAutoClose(dataStore.getAutoClose())
                     viewModel.setConnectionStatus(initialStatus)
                 }
 
@@ -338,6 +347,14 @@ class MainActivity : ComponentActivity() {
                                 dataStore.setVibrationPref(it)
                                 coroutineScope.launch {
                                     senderHelper.sendVibrationPref(it.toUInt())
+                                }
+                            },
+                            autoClose = autoClose,
+                            onAutoCloseChange = {
+                                viewModel.setAutoClose(it)
+                                dataStore.setAutoClose(it)
+                                coroutineScope.launch {
+                                    senderHelper.sendAutoClosePref(if (it) 1u else 0u)
                                 }
                             },
                             modifier = Modifier.padding(padding)

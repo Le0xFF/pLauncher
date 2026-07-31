@@ -12,6 +12,9 @@ static bool s_loading = false;
 #define PERSIST_KEY_VIBRATION_PREF 0x01
 static uint8_t s_vibration_pref = VIBE_NONE;
 
+#define PERSIST_KEY_AUTO_CLOSE 0x02
+static bool s_auto_close = false;
+
 static void save_vibration_pref(uint8_t pref) {
     s_vibration_pref = pref;
     persist_write_int(PERSIST_KEY_VIBRATION_PREF, (int32_t)pref);
@@ -29,6 +32,32 @@ void load_vibration_pref(void) {
 
 uint8_t packets_get_vibration_pref(void) {
     return s_vibration_pref;
+}
+
+static void save_auto_close_pref(bool enabled) {
+    s_auto_close = enabled;
+    persist_write_int(PERSIST_KEY_AUTO_CLOSE, enabled ? 1 : 0);
+    APP_LOG(APP_LOG_LEVEL_INFO, "Saved auto-close pref: %d", enabled ? 1 : 0);
+}
+
+void load_auto_close_pref(void) {
+    if (persist_exists(PERSIST_KEY_AUTO_CLOSE))
+        s_auto_close = (bool)persist_read_int(PERSIST_KEY_AUTO_CLOSE);
+    else
+        s_auto_close = false;
+    APP_LOG(APP_LOG_LEVEL_INFO, "Loaded auto-close pref: %d", s_auto_close ? 1 : 0);
+}
+
+bool packets_get_auto_close(void) {
+    return s_auto_close;
+}
+
+static void handle_auto_close_pref(DictionaryIterator* iter) {
+    Tuple* t = dict_find(iter, KEY_AUTO_CLOSE);
+    if (t) {
+        bool enabled = (t->value->uint8 == 1);
+        save_auto_close_pref(enabled);
+    }
 }
 
 static void outbound_sent_handler(DictionaryIterator* iter, void* context) {
@@ -121,6 +150,11 @@ static void handle_vibration_pref(DictionaryIterator* iter) {
     }
 }
 
+static void auto_close_timer_handler(void* context) {
+    exit_reason_set(APP_EXIT_ACTION_PERFORMED_SUCCESSFULLY);
+    window_stack_pop_all(false);
+}
+
 static void handle_launch_confirm(DictionaryIterator* iter) {
     Tuple* t = dict_find(iter, KEY_LAUNCH_CONFIRM);
     if (!t) {
@@ -142,6 +176,19 @@ static void handle_launch_confirm(DictionaryIterator* iter) {
             APP_LOG(APP_LOG_LEVEL_INFO, "Launch confirm: double pulse");
         } else {
             APP_LOG(APP_LOG_LEVEL_INFO, "Launch confirm: no vibration (pref=%d)", pref);
+        }
+
+        if (packets_get_auto_close()) {
+            APP_LOG(APP_LOG_LEVEL_INFO, "Auto-close enabled, scheduling close after vibration");
+            uint32_t vibe_duration = 0;
+            if (pref == VIBE_SHORT) {
+                vibe_duration = 250;
+            } else if (pref == VIBE_LONG) {
+                vibe_duration = 500;
+            } else if (pref == VIBE_DOUBLE) {
+                vibe_duration = 300;
+            }
+            app_timer_register(vibe_duration, auto_close_timer_handler, NULL);
         }
     } else {
         APP_LOG(APP_LOG_LEVEL_INFO, "Launch confirm: failure, no vibration");
@@ -169,6 +216,9 @@ static void inbox_received_handler(DictionaryIterator* iter, void* context) {
             break;
         case PACKET_TYPE_VIBRATION_PREF:
             handle_vibration_pref(iter);
+            break;
+        case PACKET_TYPE_AUTO_CLOSE_PREF:
+            handle_auto_close_pref(iter);
             break;
         default:
             APP_LOG(APP_LOG_LEVEL_ERROR, "Unknown packet type: %d", packet_type);
