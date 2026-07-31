@@ -14,7 +14,7 @@ static TextLayer* s_label_down;
 static TextLayer* s_label_launch;
 static GRect s_screen_bounds;
 static char s_display_buf[APP_NAME_LEN];
-static char s_index_buf[16];
+static char s_index_buf[32];
 
 static void window_load(Window* window) {
     Layer* window_layer = window_get_root_layer(window);
@@ -77,6 +77,7 @@ static void window_unload(Window* window) {
 
 static void window_appear(Window* window) {
     request_app_list();
+    window_main_update_display();
 }
 
 Window* window_main_create(void) {
@@ -121,7 +122,7 @@ void window_main_update_display(void) {
         layer_set_hidden((Layer *)s_label_down, false);
         layer_set_hidden((Layer *)s_label_launch, false);
     } else {
-        text_layer_set_text(s_text_layer, str_empty_message());
+        text_layer_set_text(s_text_layer, packets_is_loading() ? STR_LOADING_MESSAGE : str_empty_message());
 
         int w = s_screen_bounds.size.w;
         int h = s_screen_bounds.size.h;

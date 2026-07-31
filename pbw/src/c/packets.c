@@ -6,6 +6,8 @@
 
 static bool s_waiting_for_response = false;
 static AppTimer* s_response_timer = NULL;
+static uint8_t s_current_transfer_id = 0;
+static bool s_loading = false;
 
 static void outbound_sent_handler(DictionaryIterator* iter, void* context) {
 }
@@ -17,6 +19,8 @@ static void outbound_failed_handler(DictionaryIterator* iter, AppMessageResult r
 static void response_timeout_handler(void* context) {
     s_waiting_for_response = false;
     s_response_timer = NULL;
+    s_current_transfer_id = 0;
+    s_loading = false;
     APP_LOG(APP_LOG_LEVEL_INFO, "Response timeout, ready to retry");
 }
 
@@ -26,6 +30,8 @@ static void handle_phone_welcome(DictionaryIterator* iter) {
         s_response_timer = NULL;
     }
     s_waiting_for_response = false;
+    s_current_transfer_id = 0;
+    s_loading = false;
 
     Tuple* t = dict_find(iter, 1);
     if (t) {
@@ -39,6 +45,20 @@ static void handle_phone_welcome(DictionaryIterator* iter) {
 }
 
 static void handle_app_list(DictionaryIterator* iter) {
+    Tuple* idTuple = dict_find(iter, 6);
+    uint8_t transfer_id = idTuple ? idTuple->value->uint8 : 0;
+
+    if (transfer_id < s_current_transfer_id) {
+        APP_LOG(APP_LOG_LEVEL_INFO, "Discarding obsolete chunk (id=%d, current=%d)", transfer_id, s_current_transfer_id);
+        return;
+    }
+
+    if (transfer_id > s_current_transfer_id) {
+        s_current_transfer_id = transfer_id;
+        app_list_clear();
+        APP_LOG(APP_LOG_LEVEL_INFO, "New transfer started (id=%d)", transfer_id);
+    }
+
     Tuple* offsetTuple = dict_find(iter, 8);
     Tuple* completeTuple = dict_find(iter, 9);
     Tuple* countTuple = dict_find(iter, 3);
@@ -62,9 +82,10 @@ static void handle_app_list(DictionaryIterator* iter) {
     }
 
     if (is_last) {
+        s_loading = false;
         app_list_reset();
         window_main_update_display();
-        APP_LOG(APP_LOG_LEVEL_INFO, "App list complete: %d apps loaded", app_list_get_count());
+        APP_LOG(APP_LOG_LEVEL_INFO, "App list complete: %d apps loaded (id=%d)", app_list_get_count(), s_current_transfer_id);
     } else {
         APP_LOG(APP_LOG_LEVEL_DEBUG, "App list chunk received, total so far: %d", app_list_get_count());
     }
@@ -92,6 +113,10 @@ static void inbox_received_handler(DictionaryIterator* iter, void* context) {
     }
 }
 
+bool packets_is_loading(void) {
+    return s_loading;
+}
+
 void packets_init(void) {
     app_message_open(1024, 1024);
     app_message_register_outbox_sent(outbound_sent_handler);
@@ -106,6 +131,7 @@ void packets_deinit(void) {
 void request_app_list(void) {
     if (!s_waiting_for_response) {
         s_waiting_for_response = true;
+        s_loading = true;
         send_watch_welcome();
         s_response_timer = app_timer_register(10 * 1000, response_timeout_handler, NULL);
     }

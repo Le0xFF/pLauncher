@@ -12,6 +12,7 @@ import java.util.UUID
 
 class PebbleSenderHelper(context: Context) {
     private val sender: PebbleSender = DefaultPebbleSender(context)
+    private var transferId: UInt = 0u
 
     companion object {
         val WATCH_APP_UUID = UUID.fromString("07b1efa9-3d32-423c-b0e7-572cbc0893b8")
@@ -28,10 +29,14 @@ class PebbleSenderHelper(context: Context) {
     }
 
     suspend fun sendAppList(apps: List<LaunchApp>, watch: WatchIdentifier?): TransmissionResult {
+        transferId = (transferId + 1u) and 0xFFu
+        val currentTransferId = transferId.toUByte()
+
         if (apps.isEmpty()) {
             val dict: PebbleDictionary = mapOf(
                 0u to PebbleDictionaryItem.UInt8(11),
                 3u to PebbleDictionaryItem.UInt8(0),
+                6u to PebbleDictionaryItem.UInt8(currentTransferId),
                 9u to PebbleDictionaryItem.UInt8(1)
             )
             val watches = watch?.let { listOf(it) }
@@ -39,10 +44,10 @@ class PebbleSenderHelper(context: Context) {
             return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
         }
 
-        return sendAppListChunks(apps, watch)
+        return sendAppListChunks(apps, watch, currentTransferId)
     }
 
-    private suspend fun sendAppListChunks(apps: List<LaunchApp>, watch: WatchIdentifier?): TransmissionResult {
+    private suspend fun sendAppListChunks(apps: List<LaunchApp>, watch: WatchIdentifier?, transferId: UByte): TransmissionResult {
         val watches = watch?.let { listOf(it) }
         var lastResult: TransmissionResult = TransmissionResult.FailedTimeout
 
@@ -53,6 +58,7 @@ class PebbleSenderHelper(context: Context) {
             val dict = buildMap<UInt, PebbleDictionaryItem> {
                 put(0u, PebbleDictionaryItem.UInt8(11))
                 put(3u, PebbleDictionaryItem.UInt8(apps.size))
+                put(6u, PebbleDictionaryItem.UInt8(transferId))
                 put(8u, PebbleDictionaryItem.UInt16(i))
                 put(4u, PebbleDictionaryItem.Text(app.displayName))
                 put(5u, PebbleDictionaryItem.Text(app.packageName))
