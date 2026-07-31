@@ -495,3 +495,67 @@ Sort dropdown:
 
 - Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
 - Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+---
+
+## #15 — Wakelock Optimization: Short-duration per-message wake lock
+
+### Overview
+
+Replaced the continuous wakelock (active for the entire connection duration) with a short-duration wakelock acquired only during the processing of each incoming message from the Pebble device. The wakelock is acquired at the entry of `onMessageReceived()` and released in a `finally` block after the handler completes, allowing the CPU to enter deep sleep during idle periods.
+
+### Analysis
+
+- **Previous state**: `PebbleListenerService` acquired a `PARTIAL_WAKE_LOCK` when the watch connected (`handleWatchWelcome`) and released it when disconnected (`onAppClosed`). The wakelock remained active for the entire session, even during long idle periods.
+- **Problem**: Continuous battery drain (~300-500mA) during long sessions where the device is inactive.
+- **Solution**: Acquire the wakelock at the entry of `onMessageReceived()` and release it at the end using a `try/finally` block. The CPU stays awake only during message processing.
+- **Safety**: Both handlers (`handleWatchWelcome` and `handleLaunchApp`) complete all their processing before returning control. `handleWatchWelcome` is a `suspend fun` that awaits all transmissions. `handleLaunchApp` calls `startActivity()` synchronously.
+- **PebbleKit2**: `BasePebbleListenerService` does not manage internal wakelocks. Management is the companion app's responsibility.
+- **IPC Binder**: The AIDL call from the PebbleOS mobile app to our Binder service wakes the CPU. The wakelock ensures the CPU stays awake during full handler processing.
+
+### Android Companion App (`apk/`) — ~10 lines changed in 1 file
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `PebbleListenerService.kt` | Removed wakelock acquire from `handleWatchWelcome()`, removed wakelock release from `onAppClosed()`, added wakelock acquire + `try/finally` release in `onMessageReceived()`. Kept wakelock release in `onDestroy()` as safety cleanup. |
+
+#### Key Implementation Details
+
+**Removed continuous wakelock**:
+- Removed `wakeLock?.let { if (!it.isHeld) it.acquire() }` from `handleWatchWelcome()` (previously line 122).
+- Removed `wakeLock?.let { if (it.isHeld) it.release() }` from `onAppClosed()` (previously line 155).
+
+**Per-message wakelock**:
+- Added `wakeLock?.let { if (!it.isHeld) it.acquire() }` at the entry of `onMessageReceived()`, after the packet type validation but before the dispatch `when`.
+- Wrapped the dispatch `when` in a `try` block.
+- Added `finally` block with `wakeLock?.let { if (it.isHeld) it.release() }` to guarantee release after handler completion.
+- The `try/finally` works correctly with Kotlin `suspend fun`: the `finally` executes when the coroutine completes, including after suspension points.
+
+**Unchanged**: Wakelock declaration and initialization in `onCreate()`, safety release in `onDestroy()`, wakelock tag string resource, all existing behavior (app launch, list sync, notification updates).
+
+**Early return handling**: The packet type validation at the top of `onMessageReceived()` can return `ReceiveResult.Nack` before reaching the wakelock acquire. This is correct — unknown packet types don't require CPU-intensive processing.
+
+#### Behavior Comparison
+
+| Scenario | Before | After |
+|---|---|---|
+| Watch connected, idle | CPU awake (wakelock held) | CPU can sleep |
+| Message arrives | CPU already awake | Binder IPC wakes CPU, wakelock acquired |
+| Handler processing | CPU awake | CPU awake (wakelock held) |
+| Handler completes | CPU stays awake | Wakelock released, CPU can sleep |
+| Watch disconnected | Wakelock released | No wakelock held |
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 0 | 0 (unchanged) |
+| Android App (Kotlin) | 1 | ~10 (3 removed, 7 added in PebbleListenerService) |
+| **Total** | **1** | **~10** |
+
+#### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
+- Android app: `./gradlew --no-daemon assembleDebug` — BUILD SUCCESSFUL
