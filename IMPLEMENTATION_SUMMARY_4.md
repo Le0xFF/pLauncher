@@ -143,3 +143,106 @@ Picker at limit (checkboxes disabled, counter red):
 
 - Watch app: `pebble build` — compiles cleanly for `basalt` and `emery` (unchanged)
 - Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+---
+
+## #17 — Fix: Duplicate App Entries on Watch During Live Update + Loading Indicator
+
+### Overview
+
+Fixed duplicate app entries appearing on the watch when the companion app sends the list multiple times concurrently (e.g., both `MainActivity` and `PebbleListenerService` broadcast the same list). Also added a "Loading..." message displayed while the watch waits for the initial list from the phone, and resolved a compiler warning about buffer truncation.
+
+### Analysis
+
+- **Previous state**: The companion app sends the app list via two parallel paths: `MainActivity` directly via its `PebbleSenderHelper`, and `MainActivity` broadcasts `ACTION_SEND_APP_LIST` which `PebbleListenerService` receives and also sends. Both arrive at the watch, interleaving chunks on the BLE connection and causing duplicate/mixed entries.
+- **Transfer ID**: Introduced a `UInt8` transfer ID (key `6` in the AppMessage protocol) that increments on every list send. The watch tracks the current transfer ID and discards chunks from stale transfers (lower ID), accepting only chunks belonging to the most recent transfer.
+- **Loading indicator**: When the watchapp opens, it shows a blank screen while waiting for the phone's response. Added a "Loading..." message that displays during the waiting period and disappears once the list arrives.
+- **Buffer truncation warning**: The `s_index_buf` in `window_main.c` was only 16 bytes, insufficient for the `"%d/%d"` format. Enlarged to 32 bytes.
+
+### Watch App (`pbw/`) — ~25 lines changed across 4 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `src/c/packets.c` | Added `static uint8_t s_current_transfer_id` and `static bool s_loading`. Modified `handle_app_list()` to read key `6` (transfer ID), discard obsolete chunks, and clear `s_loading` on completion. Added `packets_is_loading()` getter. Reset transfer ID and loading flag in `handle_phone_welcome()` and `response_timeout_handler()`. Set `s_loading = true` in `request_app_list()`. |
+| `src/c/packets.h` | Added `bool packets_is_loading(void)` declaration. |
+| `src/c/window_main.c` | Added `window_main_update_display()` call in `window_appear()` so the loading state renders immediately. Updated empty-list branch to show `"Loading..."` when `packets_is_loading()` is true, otherwise the existing "No apps" message. Enlarged `s_index_buf` from 16 to 32 bytes. |
+| `src/c/strings.h` | Added `#define STR_LOADING_MESSAGE "Loading..."`. |
+
+#### Key Implementation Details
+
+**Transfer ID** (`packets.c`):
+```c
+static uint8_t s_current_transfer_id = 0;
+
+// In handle_app_list():
+Tuple* idTuple = dict_find(iter, 6);
+uint8_t transfer_id = idTuple ? idTuple->value->uint8 : 0;
+
+if (transfer_id < s_current_transfer_id) {
+    // Discard obsolete chunk from a previous transfer
+    return;
+}
+if (transfer_id > s_current_transfer_id) {
+    s_current_transfer_id = transfer_id;
+    app_list_clear();
+}
+```
+Messages without key `6` are treated as `transfer_id = 0` (backward compatibility). The watch accepts only chunks matching or exceeding the current transfer ID.
+
+**Loading state** (`packets.c` + `window_main.c`):
+- `request_app_list()` sets `s_loading = true` before sending the welcome.
+- `handle_app_list()` clears `s_loading = false` when `is_last` is reached.
+- `response_timeout_handler()` and `handle_phone_welcome()` clear `s_loading` on reset.
+- `window_appear()` calls `window_main_update_display()` after `request_app_list()`, rendering "Loading..." immediately.
+- `window_main_update_display()` checks `packets_is_loading()` to choose between `"Loading..."` and the empty message.
+
+**Buffer fix** (`window_main.c`):
+Changed `static char s_index_buf[16]` to `static char s_index_buf[32]`, eliminating the `-Wformat-truncation` warning from the `snprintf("%d/%d", ...)` call.
+
+**Unchanged**: App list management (`app_list.c/h`), click handling, navigation, launch logic, protocol versioning, all existing packet types and keys.
+
+### Android Companion App (`apk/`) — ~10 lines changed across 1 file
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `PebbleSenderHelper.kt` | Added `private var transferId: UInt = 0u`. Modified `sendAppList()` to increment `transferId` on each call, include key `6` in empty-list message, and pass the ID to `sendAppListChunks()`. Modified `sendAppListChunks()` to accept `transferId: UByte` and include key `6` in every chunk. |
+
+#### Key Implementation Details
+
+**Transfer ID** (`PebbleSenderHelper.kt`):
+```kotlin
+private var transferId: UInt = 0u
+
+suspend fun sendAppList(apps: List<LaunchApp>, watch: WatchIdentifier?): TransmissionResult {
+    transferId = (transferId + 1u) and 0xFFu
+    val currentTransferId = transferId.toUByte()
+    // ... include key 6 in all chunks
+}
+```
+The ID wraps at 256 (UInt8). Each `PebbleSenderHelper` instance maintains its own counter. When multiple instances exist (e.g., `MainActivity` + `PebbleListenerService`), they produce different IDs; the watch accepts only the highest, correctly discarding the earlier transfer.
+
+### Protocol Documentation — ~5 lines changed
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `COMMUNICATION_PROTOCOL.md` | Added key `6` (UInt8, Transfer ID) to the keys table. Updated "Chunked App Lists" section with transfer ID behavior and deduplication explanation. |
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 4 | ~25 (transfer ID + loading state in packets, display update in window_main, string in strings.h, buffer fix) |
+| Android App (Kotlin) | 1 | ~10 (transfer ID state and injection in PebbleSenderHelper) |
+| Documentation | 1 | ~5 (key table + chunked lists section) |
+| **Total** | **6** | **~40** |
+
+#### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery`, zero warnings (pre-existing truncation warning fixed)
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
