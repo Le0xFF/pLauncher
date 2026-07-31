@@ -86,6 +86,11 @@ See `COMPILE_INSTRUCTIONS.md` for detailed build steps, prerequisites, and troub
 - PebbleKit Android API: `https://developer.rebble.io/docs/pebblekit-android/com/getpebble/android/kit/PebbleKit/`
 - Pebble hardware documentation: `https://developer.repebble.com/guides/tools-and-resources/hardware-information/`
 
+## Android library references
+
+- [Reorderable](https://github.com/Calvin-LL/Reorderable) — Drag-and-drop reorder for LazyColumn/LazyGrid in Jetpack Compose (v3.1.0, used in AppScreen.kt)
+- [Reorderable Maven Central](https://central.sonatype.com/artifact/sh.calvin.reorderable/reorderable/3.1.0) — Artifact metadata
+
 ## Pebble additional details
 
 The complete explanation about Pebble platform and its SDK can be found in: `${HOME}/PEBBLE/AGENTS.md`
