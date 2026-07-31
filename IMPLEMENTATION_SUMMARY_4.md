@@ -406,3 +406,159 @@ Settings screen order:
 
 - Watch app: `pebble build` — compiles cleanly for `basalt` and `emery`
 - Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+---
+
+## #19 — Auto-Close Watchapp After Successful Launch
+
+### Overview
+
+Added an "Auto-close" switch in the "Watchapp settings" section of the companion app's Settings screen. When enabled, the Pebble watchapp automatically closes after a successful app launch, returning directly to the watchface (not the app menu). The user still receives the configured vibration feedback before the app closes. Preferences are synchronized from the phone to the watch on connection and when the setting changes, and persisted on both sides.
+
+### Analysis
+
+- **Previous state**: After a successful launch, the watch vibrated (if configured) but the watchapp remained open on screen.
+- **Protocol**: Added packet type 14 (Auto-Close Pref) with dictionary key 12 (auto-close flag, UInt8). This is a separate packet from the launch confirm (type 12, key 10), keeping the transient launch event distinct from the persistent auto-close setting.
+- **Watch persistence**: Auto-close preference stored in Pebble's PersistentKeyStore (`persist_*` API), loaded on boot, defaulting to `false` (disabled).
+- **Auto-close mechanism**: On successful launch confirm, the watch schedules an `AppTimer` with a delay matching the vibration duration (250ms for short, 500ms for long, 300ms for double, 0ms for none). When the timer fires, the watch calls `exit_reason_set(APP_EXIT_ACTION_PERFORMED_SUCCESSFULLY)` then `window_stack_pop_all(false)`. The exit reason tells the BSP to navigate to the **default watchface** instead of the app menu. Failed launches never trigger auto-close.
+- **UI**: Switch in the "Watchapp settings" accordion card, positioned below the vibration dropdown, separated by a `HorizontalDivider()`.
+
+### Watch App (`pbw/`) — ~40 lines changed across 3 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `src/c/packets.h` | Added `#define PACKET_TYPE_AUTO_CLOSE_PREF 14`, `#define KEY_AUTO_CLOSE 12`. Added declarations for `load_auto_close_pref()` and `packets_get_auto_close()`. |
+| `src/c/packets.c` | Added `static bool s_auto_close` and `#define PERSIST_KEY_AUTO_CLOSE 0x02`. Implemented `save_auto_close_pref()`, `load_auto_close_pref()`, `packets_get_auto_close()` using `persist_*` API. Added `handle_auto_close_pref()` (receives packet 14, saves preference). Added `auto_close_timer_handler()` (fires after vibration, sets exit reason and pops windows). Modified `handle_launch_confirm()` to schedule an `AppTimer` with duration matching the vibration type when auto-close is enabled. Added switch case for packet type 14 in `inbox_received_handler`. |
+| `src/c/pLauncher.c` | Added `load_auto_close_pref()` call in `init()` after `load_vibration_pref()`. |
+
+#### Key Implementation Details
+
+**Protocol constants** (`packets.h`):
+```c
+#define PACKET_TYPE_AUTO_CLOSE_PREF 14
+#define KEY_AUTO_CLOSE 12
+```
+
+**Persistence** (`packets.c`):
+```c
+static bool s_auto_close = false;
+#define PERSIST_KEY_AUTO_CLOSE 0x02
+
+void load_auto_close_pref(void) {
+    if (persist_exists(PERSIST_KEY_AUTO_CLOSE))
+        s_auto_close = (bool)persist_read_int(PERSIST_KEY_AUTO_CLOSE);
+    else
+        s_auto_close = false;
+}
+```
+
+**Timer-based auto-close** (`packets.c`):
+```c
+static void auto_close_timer_handler(void* context) {
+    exit_reason_set(APP_EXIT_ACTION_PERFORMED_SUCCESSFULLY);
+    window_stack_pop_all(false);
+}
+
+// In handle_launch_confirm(), after vibration:
+if (packets_get_auto_close()) {
+    uint32_t vibe_duration = 0;
+    if (pref == VIBE_SHORT) vibe_duration = 250;
+    else if (pref == VIBE_LONG) vibe_duration = 500;
+    else if (pref == VIBE_DOUBLE) vibe_duration = 300;
+    app_timer_register(vibe_duration, auto_close_timer_handler, NULL);
+}
+```
+
+The timer approach ensures the vibration completes before the app closes. The durations match the exact `VibePattern` segments defined in the Repebble firmware (`src/fw/applib/ui/vibes.c`):
+- `vibes_short_pulse`: ON 250ms → total 250ms
+- `vibes_long_pulse`: ON 500ms → total 500ms
+- `vibes_double_pulse`: ON 100ms, OFF 100ms, ON 100ms → total 300ms
+
+**Exit reason** (`packets.c`):
+`exit_reason_set(APP_EXIT_ACTION_PERFORMED_SUCCESSFULLY)` tells the BSP to navigate to the **default watchface** after the app exits, rather than returning to the app menu. This was verified against the Repebble firmware source (`src/fw/process_management/app_manager.c`), where `APP_EXIT_ACTION_PERFORMED_SUCCESSFULLY` returns `watchface_get_default_install_id()` as the destination, while `APP_EXIT_NOT_SPECIFIED` falls back to the previously running app.
+
+**`app_intent_set_user_wants_app_moved_to_background` unavailable**: The original plan specified this API, but it does not exist in SDK 4.17. The combination of `exit_reason_set(APP_EXIT_ACTION_PERFORMED_SUCCESSFULLY)` + `window_stack_pop_all(false)` achieves the same result (close app → go to watchface).
+
+### Android Companion App (`apk/`) — ~30 lines changed across 6 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `res/values/strings.xml` | Added `settings_auto_close` ("Auto-close on launch") and `settings_auto_close_desc` ("Close pLauncher after successful app launch"). |
+| `data/AppDataStore.kt` | Added `KEY_AUTO_CLOSE`, `MutableStateFlow<Boolean>` for `_autoClose`, `StateFlow<Boolean>` for `autoClose`, `getAutoClose()`, `setAutoClose()`, `loadAutoClose()` (default `false`). |
+| `MainActivity.kt` | Added `_autoClose` and `autoClose` StateFlow to `AppViewModel`, `setAutoClose()`. Load from DataStore in `LaunchedEffect`. Pass `autoClose` and `onAutoCloseChange` to `SettingsScreen`. Callback saves to DataStore, updates ViewModel, and sends packet 14 via `senderHelper.sendAutoClosePref()`. |
+| `ui/SettingsScreen.kt` | Added `autoClose` and `onAutoCloseChange` parameters. Added `HorizontalDivider()` + Row with Column (label + desc) and Switch below the vibration row in the "Watchapp settings" section. |
+| `PebbleSenderHelper.kt` | Added `sendAutoClosePref(enabled: UInt)` (packet type 14, key 12). |
+| `PebbleListenerService.kt` | Modified `handleWatchWelcome()` to send auto-close pref after vibration pref. |
+
+#### Key Implementation Details
+
+**Switch UI** (`SettingsScreen.kt`):
+Same pattern as the "Show system apps" switch:
+```kotlin
+HorizontalDivider()
+Row(...) {
+    Column(modifier = Modifier.weight(1f)) {
+        Text(stringResource(R.string.settings_auto_close), style = bodyLarge)
+        Text(stringResource(R.string.settings_auto_close_desc), style = bodySmall)
+    }
+    Switch(checked = autoClose, onCheckedChange = onAutoCloseChange)
+}
+```
+
+**Sender** (`PebbleSenderHelper.kt`):
+```kotlin
+suspend fun sendAutoClosePref(enabled: UInt): TransmissionResult {
+    val dict: PebbleDictionary = mapOf(
+        0u to PebbleDictionaryItem.UInt8(14),
+        12u to PebbleDictionaryItem.UInt8(if (enabled == 1u) 1 else 0)
+    )
+    val result = sender.sendDataToPebble(WATCH_APP_UUID, dict, null)
+    return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
+}
+```
+
+**Connection sync** (`PebbleListenerService.kt`):
+On watch welcome, after sending vibration pref, reads `dataStore.getAutoClose()` and sends via `helper.sendAutoClosePref()`.
+
+**`Boolean.toUInt()` not available in Kotlin**: The plan specified `it.toUInt()` which doesn't exist for `Boolean`. Used `if (it) 1u else 0u` in both `MainActivity.kt` and `PebbleListenerService.kt`.
+
+#### Layout
+
+Settings screen "Watchapp settings" section (expanded):
+```
+┌─────────────────────────────────┐
+│ ▾ Watchapp settings             │
+│   Vibration on launch           │
+│   Haptic feedback...   [None ▼] │
+│   ─────────────────────         │
+│   Auto-close on launch    [●]   │
+│   Close pLauncher after         │
+│   successful app launch         │
+└─────────────────────────────────┘
+```
+
+### Protocol Documentation — ~5 lines changed
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `COMMUNICATION_PROTOCOL.md` | Added key `12` (UInt8, Phone → Watch, Auto-close preference) to the keys table. Added packet type `14` (Auto-Close Preference — keys: `12` (auto-close flag uint8, 1 = enabled, 0 = disabled)) to the Phone → Watch section. Updated "Settings" note to mention both vibration and auto-close preferences are synchronized from phone to watch. |
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 3 | ~40 (constants, persistence, timer handler, auto-close in confirm handler) |
+| Android App (Kotlin) | 6 | ~30 (strings, data store, view model, UI switch, sender, service) |
+| Documentation | 1 | ~5 (key table, packet type, settings note) |
+| **Total** | **10** | **~75** |
+
+#### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery`
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
