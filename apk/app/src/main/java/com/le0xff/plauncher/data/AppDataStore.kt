@@ -15,6 +15,7 @@ class AppDataStore(private val context: Context) {
         private const val KEY_SYSTEM_APPS = "system_apps"
         private const val KEY_GENERATE_CRASH_REPORTS = "generate_crash_reports"
         private const val KEY_THEME = "theme"
+        private const val KEY_VIBRATION_PREF = "vibration_pref"
         private const val SEP = "|"
         private const val LINE_SEP = "\n"
     }
@@ -30,6 +31,9 @@ class AppDataStore(private val context: Context) {
 
     private val _appTheme = MutableStateFlow<AppTheme>(loadAppTheme())
     val appTheme: StateFlow<AppTheme> = _appTheme
+
+    private val _vibrationPref = MutableStateFlow<Int>(loadVibrationPref())
+    val vibrationPref: StateFlow<Int> = _vibrationPref
 
     fun saveApps(apps: List<LaunchApp>) {
         _apps.value = apps
@@ -81,5 +85,16 @@ class AppDataStore(private val context: Context) {
     fun setAppTheme(value: AppTheme) {
         _appTheme.value = value
         prefs.edit().putString(KEY_THEME, value.name).apply()
+    }
+
+    fun getVibrationPref(): Int = _vibrationPref.value
+
+    fun setVibrationPref(value: Int) {
+        _vibrationPref.value = value
+        prefs.edit().putInt(KEY_VIBRATION_PREF, value).apply()
+    }
+
+    private fun loadVibrationPref(): Int {
+        return prefs.getInt(KEY_VIBRATION_PREF, 0)
     }
 }

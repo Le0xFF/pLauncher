@@ -52,6 +52,13 @@
     <string name="settings_granted">Granted</string>
     <string name="settings_ignore_battery">Ignore Battery Optimizations</string>
     <string name="settings_ignore_battery_desc">Prevents aggressive service killing</string>
+    <string name="settings_section_watchapp">Watchapp settings</string>
+    <string name="settings_vibration">Vibration on launch</string>
+    <string name="settings_vibration_desc">Haptic feedback when an app launches</string>
+    <string name="settings_vibration_none">None</string>
+    <string name="settings_vibration_short">Short</string>
+    <string name="settings_vibration_long">Long</string>
+    <string name="settings_vibration_double">Double</string>
     <string name="settings_section_themes">Themes</string>
     <string name="settings_theme">Theme</string>
     <string name="settings_theme_light">Light</string>

@@ -39,10 +39,13 @@ fun SettingsScreen(
     ignoringBatteryOpt: Boolean,
     currentTheme: AppTheme,
     onThemeChange: (AppTheme) -> Unit,
+    vibrationPref: Int,
+    onVibrationPrefChange: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     var generalExpanded by remember { mutableStateOf(false) }
+    var watchappExpanded by remember { mutableStateOf(false) }
     var permissionsExpanded by remember { mutableStateOf(false) }
     var debugExpanded by remember { mutableStateOf(false) }
 
@@ -106,6 +109,71 @@ fun SettingsScreen(
                     modifier = Modifier.weight(1f)
                 )
                 Switch(checked = showSystemApps, onCheckedChange = onShowSystemAppsChange)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        AccordionCard(
+            title = stringResource(R.string.settings_section_watchapp),
+            expanded = watchappExpanded,
+            onExpandedChange = { watchappExpanded = it }
+        ) {
+            val vibeLabels = mapOf(
+                0 to stringResource(R.string.settings_vibration_none),
+                1 to stringResource(R.string.settings_vibration_short),
+                2 to stringResource(R.string.settings_vibration_long),
+                3 to stringResource(R.string.settings_vibration_double)
+            )
+            var vibeExpanded by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = stringResource(R.string.settings_vibration), style = MaterialTheme.typography.bodyLarge)
+                    Text(text = stringResource(R.string.settings_vibration_desc), style = MaterialTheme.typography.bodySmall)
+                }
+                ExposedDropdownMenuBox(
+                    expanded = vibeExpanded,
+                    onExpandedChange = { vibeExpanded = it }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .clickable { vibeExpanded = true }
+                            .menuAnchor()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = vibeLabels[vibrationPref] ?: stringResource(R.string.settings_vibration_none),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = if (vibeExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    ExposedDropdownMenu(
+                        expanded = vibeExpanded,
+                        onDismissRequest = { vibeExpanded = false }
+                    ) {
+                        vibeLabels.forEach { (value, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    onVibrationPrefChange(value)
+                                    vibeExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
 

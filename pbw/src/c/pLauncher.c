@@ -5,6 +5,7 @@
 
 static void init(void) {
     packets_init();
+    load_vibration_pref();
     app_list_init();
     Window* window = window_main_create();
     bool animated = true;

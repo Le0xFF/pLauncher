@@ -74,6 +74,24 @@ class PebbleSenderHelper(context: Context) {
         return lastResult
     }
 
+    suspend fun sendVibrationPref(pref: UInt): TransmissionResult {
+        val dict: PebbleDictionary = mapOf(
+            0u to PebbleDictionaryItem.UInt8(13),
+            11u to PebbleDictionaryItem.UInt8(pref.toInt())
+        )
+        val result = sender.sendDataToPebble(WATCH_APP_UUID, dict, null)
+        return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
+    }
+
+    suspend fun sendLaunchConfirm(success: Boolean): TransmissionResult {
+        val dict: PebbleDictionary = mapOf(
+            0u to PebbleDictionaryItem.UInt8(12),
+            10u to PebbleDictionaryItem.UInt8(if (success) 1 else 0)
+        )
+        val result = sender.sendDataToPebble(WATCH_APP_UUID, dict, null)
+        return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
+    }
+
     fun close() {
         try {
             sender.close()
