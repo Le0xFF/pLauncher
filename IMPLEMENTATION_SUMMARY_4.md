@@ -261,7 +261,7 @@ Added haptic vibration feedback on the Pebble watch when an Android app is succe
 - **Protocol**: Added packet type 12 (Launch Confirm) and packet type 13 (Vibration Preference), plus keys 10 and 11. All existing hardcoded packet/key numbers in the watch app were replaced with named `#define` constants for maintainability.
 - **Watch persistence**: Vibration preference stored in Pebble's PersistentKeyStore (`persist_*` API), loaded on boot, defaulting to None.
 - **Launch confirmation**: `LaunchActivity` wraps `startActivity()` in try-catch, broadcasts result to `PebbleListenerService`, which sends packet 12 to the watch. The watch triggers `vibes_short_pulse()`, `vibes_long_pulse()`, or `vibes_double_pulse()` based on saved preference.
-- **UI**: New "Watchapp settings" accordion card in Settings screen with a compact dropdown (Text + icon, not full TextField) for vibration selection, positioned between "General" and "Permissions".
+- **UI**: New "Watchapp settings" accordion card in Settings screen with a compact dropdown (Row + Text + Icon, not full TextField) for vibration selection, positioned between "General" and "Permissions". Both the theme dropdown in "General" and the vibration dropdown in "Watchapp settings" share the same compact Row-based trigger pattern to avoid Material3's hardcoded 280dp `minWidth` in `TextField`/`OutlinedTextField`.
 
 ### Watch App (`pbw/`) — ~60 lines changed across 3 files
 
@@ -322,30 +322,37 @@ static void handle_launch_confirm(DictionaryIterator* iter) {
 | `res/values/strings.xml` | Added 7 strings: `settings_section_watchapp`, `settings_vibration`, `settings_vibration_desc`, `settings_vibration_none`, `settings_vibration_short`, `settings_vibration_long`, `settings_vibration_double`. |
 | `data/AppDataStore.kt` | Added `KEY_VIBRATION_PREF`, `MutableStateFlow<Int>` for vibration pref, `getVibrationPref()`, `setVibrationPref()`, `loadVibrationPref()` (default 0). |
 | `MainActivity.kt` | Added `_vibrationPref` and `vibrationPref` StateFlow to `AppViewModel`, `setVibrationPref()`. Load from DataStore in `LaunchedEffect`. Pass `vibrationPref` and `onVibrationPrefChange` to `SettingsScreen`. Callback saves to DataStore and sends packet 13 via `senderHelper.sendVibrationPref()`. |
-| `ui/SettingsScreen.kt` | Added `vibrationPref` and `onVibrationPrefChange` parameters. Added "Watchapp settings" accordion card between General and Permissions. Compact dropdown using Row + Text + Icon (not TextField) with `wrapContentWidth()`-sized layout. |
+| `ui/SettingsScreen.kt` | Added `vibrationPref` and `onVibrationPrefChange` parameters. Added "Watchapp settings" accordion card between General and Permissions. Compact dropdown using Row with `Arrangement.SpaceBetween`, `MenuAnchorType.PrimaryNotEditable`, and `.widthIn(min = 80.dp)`. Also updated the theme dropdown in "General" section to use the same compact pattern. |
 | `PebbleSenderHelper.kt` | Added `sendVibrationPref(pref: UInt)` (packet 13, key 11) and `sendLaunchConfirm(success: Boolean)` (packet 12, key 10). |
 | `LaunchActivity.kt` | Wrapped app launch in try-catch. Added `ACTION_LAUNCH_RESULT` broadcast with success/failure result. Sends broadcast before `finish()`. |
 | `PebbleListenerService.kt` | Added `launchResultReceiver` BroadcastReceiver for `ACTION_LAUNCH_RESULT`. Calls `senderHelper.sendLaunchConfirm()` on receive. Registered in `onCreate()`, unregistered in `onDestroy()`. Modified `handleWatchWelcome()` to send vibration pref after app list. |
 
 #### Key Implementation Details
 
-**Vibration dropdown** (`SettingsScreen.kt`):
-Compact Row-based dropdown (not full-width TextField):
+**Compact dropdown trigger** (`SettingsScreen.kt`):
+Both theme and vibration dropdowns use the same Row-based trigger pattern (not `TextField`):
 ```kotlin
 Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
     Column(modifier = Modifier.weight(1f)) {
-        Text("Vibration on launch")
-        Text("Haptic feedback when an app launches")
+        Text(label, style = bodyLarge)
+        Text(description, style = bodySmall)
     }
-    ExposedDropdownMenuBox {
-        Row(clickable, menuAnchor) {
-            Text(selectedValue)
-            Icon(expand/collapse)
+    ExposedDropdownMenuBox(expanded, onExpandedChange) {
+        Row(
+            modifier = Modifier
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .widthIn(min = 80.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(selectedValue, style = bodyMedium)
+            Icon(expand/collapse, size = 20.dp)
         }
         ExposedDropdownMenu { options }
     }
 }
 ```
+The `TextField` and `OutlinedTextField` in Material3 1.3.1 have a hardcoded 280dp `minWidth` that cannot be overridden (`textFieldParameters` unavailable). The Row-based workaround achieves a compact trigger with fixed width (`min = 80.dp`), `Arrangement.SpaceBetween` to anchor the icon to the right edge, and `MenuAnchorType.PrimaryNotEditable` to properly integrate with `ExposedDropdownMenuBox` for tap-to-open/tap-to-close toggling.
 
 **Launch result broadcast** (`LaunchActivity.kt`):
 ```kotlin
@@ -368,14 +375,16 @@ Settings screen order:
 │ Settings                        │
 │                                 │
 │ ▾ General                       │
-│   Theme: [Dark          ▼]     │
+│   Theme                         │
+│   Appearance of the        [Dark ▼]
+│   companion app                 │
 │   ─────────────────────         │
 │   Show system apps    [●]       │
 │                                 │
 │ ▸ Watchapp settings             │
 │   (expanded shows:)             │
 │   Vibration on launch           │
-│   Haptic feedback...    [None ▼]│
+│   Haptic feedback...   [None ▼] │
 │                                 │
 │ ▸ Permissions                   │
 │ ▸ Debug                         │
@@ -389,9 +398,9 @@ Settings screen order:
 | Component | Files | Lines changed |
 |---|---|---|
 | Watch App (C) | 3 | ~60 (constants, persistence, handlers, switch cases) |
-| Android App (Kotlin) | 6 | ~90 (strings, data store, view model, UI, sender, activity, service) |
+| Android App (Kotlin) | 6 | ~100 (strings, data store, view model, UI with compact dropdowns, sender, activity, service) |
 | Documentation | 1 | ~10 (new packet types, keys, protocol section) |
-| **Total** | **10** | **~160** |
+| **Total** | **10** | **~170** |
 
 #### Build Status
 

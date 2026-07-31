@@ -234,8 +234,8 @@ Added two new themes ("Dark" and "AMOLED") to the Android companion app, alongsi
 |---|---|
 | `data/AppDataStore.kt` | Added `KEY_THEME`, `_appTheme`/`appTheme` StateFlow, `loadAppTheme()`, `getAppTheme()`, `setAppTheme()`. Persists theme enum name in SharedPreferences with `Light` default. |
 | `MainActivity.kt` | Added `_appTheme`/`appTheme` to `AppViewModel` with `setAppTheme()`. Replaced `MaterialTheme` with `pLauncherTheme`. Collects theme on startup from `AppDataStore`. Passes `currentTheme` and `onThemeChange` to `SettingsScreen`. |
-| `ui/SettingsScreen.kt` | Added `currentTheme` and `onThemeChange` parameters. Added "Themes" accordion with `@OptIn(ExperimentalMaterial3Api::class)` `ExposedDropdownMenuBox` containing three options using `DropdownMenuItem`. |
-| `res/values/strings.xml` | Added `settings_section_themes` ("Themes"), `settings_theme` ("Theme"), `settings_theme_light` ("Light"), `settings_theme_dark` ("Dark"), `settings_theme_amoled` ("AMOLED"). |
+| `ui/SettingsScreen.kt` | Added `currentTheme` and `onThemeChange` parameters. Added "Themes" accordion with compact Row-based dropdown trigger (`MenuAnchorType.PrimaryNotEditable`, `Arrangement.SpaceBetween`, `.widthIn(min = 80.dp)`). Moved "Themes" accordion into "General" section (replacing original separate section). Replaced full-width `TextField` with Row + Text + Icon layout. Added description text for theme setting. |
+| `res/values/strings.xml` | Added `settings_section_themes` ("Themes"), `settings_theme` ("Theme"), `settings_theme_desc` ("Appearance of the companion app"), `settings_theme_light` ("Light"), `settings_theme_dark` ("Dark"), `settings_theme_amoled` ("AMOLED"). |
 
 #### Key Implementation Details
 
@@ -259,9 +259,34 @@ Added two new themes ("Dark" and "AMOLED") to the Android companion app, alongsi
 - `window.statusBarColor = TRANSPARENT` and `window.navigationBarColor = TRANSPARENT`
 - `LocalTonalElevationEnabled provides (theme != AppTheme.Amoled)` — disables tonal elevation for AMOLED to keep surfaces pure black
 
-**Settings Themes accordion**: Uses `ExposedDropdownMenuBox` (requires `@OptIn(ExperimentalMaterial3Api::class)`) with a `TextField` showing the current theme label and a dropdown with three `DropdownMenuItem` entries. Selection updates both the ViewModel and `AppDataStore` simultaneously, triggering an immediate UI refresh via `pLauncherTheme`.
+**Settings Themes accordion**: Uses `ExposedDropdownMenuBox` with a compact Row-based trigger instead of `TextField`. The `TextField` and `OutlinedTextField` in Material3 1.3.1 have a hardcoded 280dp `minWidth` that cannot be overridden (`textFieldParameters` unavailable in this version), causing them to take half the screen width. The workaround uses a `Row` with `Arrangement.SpaceBetween`, `MenuAnchorType.PrimaryNotEditable`, and `.widthIn(min = 80.dp)`: the Text (selected value) on the left, the expand/collapse icon anchored to the right. The `Column` on the left side of the parent Row shows the label ("Theme") and description ("Appearance of the companion app"). Tapping the Row toggles the dropdown open/close. Selection updates both the ViewModel and `AppDataStore` simultaneously, triggering an immediate UI refresh via `pLauncherTheme`.
 
 **Persistence**: Theme name stored as string in SharedPreferences under key `"theme"`. On first launch (key absent), defaults to `Light` — preserving existing behavior.
+
+#### Settings Screen Layout (with compact dropdowns)
+
+```
+┌─────────────────────────────────┐
+│ Settings                        │
+│                                 │
+│ ▾ General                       │
+│   Theme                         │
+│   Appearance of the        [AMOLED ▼]
+│   companion app                 │
+│   ─────────────────────         │
+│   Show system apps    [●]       │
+│                                 │
+│ ▸ Watchapp settings             │
+│   (expanded shows:)             │
+│   Vibration on launch           │
+│   Haptic feedback...   [None ▼] │
+│                                 │
+│ ▸ Permissions                   │
+│ ▸ Debug                         │
+│                                 │
+│               v1.0.0            │
+└─────────────────────────────────┘
+```
 
 #### AMOLED Theme Visual Layout
 
@@ -284,9 +309,9 @@ Added two new themes ("Dark" and "AMOLED") to the Android companion app, alongsi
 
 | Component | Files | Lines changed |
 |---|---|---|
-| Watch App (C) | 0 | 0 (unchanged) |
-| Android App (Kotlin) | 5 | ~120 (Theme.kt created, AppDataStore/MainActivity/SettingsScreen modified, strings added) |
-| **Total** | **5** | **~120** |
+| Watch App (C) | 0 | 0 (unchanged)
+| Android App (Kotlin) | 5 | ~130 (Theme.kt created, AppDataStore/MainActivity/SettingsScreen modified, strings added, compact dropdown layout) |
+| **Total** | **5** | **~130** |
 
 #### Build Status
 
