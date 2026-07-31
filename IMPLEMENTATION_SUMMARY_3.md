@@ -128,53 +128,58 @@ When the field is empty, the original name appears as a faded placeholder:
 
 ---
 
-## #12 — Home Screen: Drag-to-Reorder with Live Reorder
+## #12 — Home Screen: Drag-to-Reorder with Reorderable Library
 
 ### Overview
 
-Added the ability to manually reorder apps in the Home screen (`AppScreen.kt`) of the Android companion app. Each list item has a "drag handle" icon (six-dot `DragIndicator`) on the far left. A long press on this handle activates a vertical drag. As the user drags past adjacent items, the list reorders in real-time (live reorder on cross). The dragged item is visually elevated with shadow, background, and translation. When the drag ends, the new order is persisted to `SharedPreferences`, synced to the Pebble watch via `PebbleSenderHelper`, and broadcast to `PebbleListenerService`. The drag handle is hidden when a search filter is active.
+Replaced the manual drag-and-drop implementation in the Home screen (`AppScreen.kt`) of the Android companion app with the [Reorderable](https://github.com/Calvin-LL/Reorderable) library (v3.1.0) by Calvin-LL. Each list item has a "drag handle" icon (six-dot `DragIndicator`) on the far left. A long press on this handle activates a vertical drag. The library handles reordering, visual feedback (elevation, background, translation), zIndex for proper draw ordering, and auto-scroll when dragging near screen edges. When the drag ends, the new order is persisted to `SharedPreferences`, synced to the Pebble watch via `PebbleSenderHelper`, and broadcast to `PebbleListenerService`. The drag handle is hidden and drag is disabled when a search filter is active.
 
 ### Analysis
 
-- **Previous state**: Each app entry on the Home screen had icon, display name, package name, Edit and Delete buttons. The order was determined by the position in `List<LaunchApp>` and could only be changed via the picker dialog. No drag-and-drop was available.
+- **Previous state**: Drag-and-drop was implemented manually using `Modifier.draggable` with `rememberDraggableState()`, `graphicsLayer { translationY }` for visual offset, and `onGloballyPositioned` for item height measurement. Two structural bugs existed: (1) the dragged item's background was invisible when dragging downward because `zIndex` was missing, causing the item to render **behind** the item it overlapped in the `LazyColumn` draw order; (2) dragging the first item upward triggered `LazyColumn`'s own scroll handler instead of the drag, because the gesture was consumed by the list's scroll before reaching the `draggable` modifier.
+- **Root cause Bug 1 (background missing downward)**: Without `zIndex(1f)` applied as a `Modifier` before `graphicsLayer`, the dragged item has no elevated draw order. When translated downward (`translationY` positive), it overlaps the next item in the `LazyColumn`, but renders behind it because `LazyColumn` draws items sequentially. Dragging upward worked "by accident" because negative `translationY` moves into empty space above.
+- **Root cause Bug 2 (list scrolls instead of item)**: `LazyColumn` has its own vertical scroll gesture handler that intercepts touch gestures. When dragging the first item upward, the gesture is consumed by the `LazyColumn` scroll rather than the `draggable` modifier. `LazyColumn` provides no mechanism to disable scroll during a drag of a specific item.
+- **Solution chosen**: Replace the manual implementation entirely with the [Reorderable](https://github.com/Calvin-LL/Reorderable) library. This is the standard solution for drag-and-drop in `LazyColumn` in Jetpack Compose, used by high-profile projects including [Lawnchair](https://github.com/LawnchairLauncher/lawnchair), [Home Assistant](https://github.com/home-assistant/android), [ProtonVPN](https://github.com/ProtonVPN/android-app), [Pocket Casts](https://github.com/Automattic/pocket-casts-android), [Aniyomi](https://github.com/aniyomiorg/aniyomi), [Mihon](https://github.com/mihonapp/mihon), [Neo Launcher](https://github.com/NeoApplications/Neo-Launcher), and others.
+- **Why Reorderable fixes both bugs**: (1) It automatically applies `zIndex(1f)` to the dragged item, ensuring correct draw order in all directions. (2) It manages scroll internally, performing auto-scroll when dragging near screen edges, rather than letting `LazyColumn` consume the gesture. It also provides `isDragging` for conditional styling and `Modifier.draggableHandle()` scoped to `ReorderableCollectionItemScope`.
 - **Model**: `LaunchApp` with `packageName` and `displayName`. Order is determined by the position in `List<LaunchApp>`. The `packageName` is the unique key (used in `items()`).
 - **Persistence**: `AppDataStore` persists the list in SharedPreferences (`KEY_APPS`) as newline-separated strings. Order is preserved.
 - **Sync**: `PebbleSenderHelper` sends the list to the watch using indices (`apps.indices`). Order is critical.
-- **Architecture**: Follows the existing pattern: ViewModel exposes pure `reorderApp(fromIndex, toIndex): List<LaunchApp>` that returns the reordered list without modifying internal state. `MainActivity` handles persistence and Pebble sync atomically.
-- **UI**: Jetpack Compose `Modifier.draggable` with `startDragImmediately = false` (long press required). Live reorder on cross: as the drag crosses one full item height, the list immediately reorders. `Modifier.graphicsLayer` with `shadowElevation` and `translationY` promotes the dragged item to a separate GPU compositing layer that renders above siblings.
+- **Architecture**: Unchanged from before: ViewModel exposes pure `reorderApp(fromIndex, toIndex): List<LaunchApp>` that returns the reordered list without modifying internal state. `MainActivity` handles persistence and Pebble sync atomically. The `onReorderApp` callback signature remains `(fromIndex: Int, toIndex: Int) -> Unit`.
+- **UI**: Reorderable library's `ReorderableItem` wraps each list item. `rememberReorderableLazyListState` connects the `LazyListState` with the reorder callback. `Modifier.draggableHandle()` is applied to the drag handle `Box` within the `ReorderableCollectionItemScope`. The `enabled` parameter on `ReorderableItem` disables drag when `searchQuery` is not blank.
 
-### Android Companion App (`apk/`) — ~50 lines changed across 3 files
+### Android Companion App (`apk/`) — ~40 lines changed across 3 files
 
 #### Modified Files
 
 | File | Changes |
 |---|---|
-| `res/values/strings.xml` | Added `appscreen_drag_handle` ("Reorder") for the drag handle content description. |
-| `MainActivity.kt` | Added `reorderApp(fromIndex: Int, toIndex: Int): List<LaunchApp>` pure function to `AppViewModel`. Wired `onReorderApp` callback in `AppScreen` call: computes reordered list, updates ViewModel, persists to DataStore, sends to Pebble, broadcasts to PebbleListenerService. |
-| `ui/AppScreen.kt` | Added `onReorderApp` parameter. Added drag handle `Box` with `Icons.Filled.DragIndicator` (visible only when `searchQuery.isBlank()`). Implemented drag state (`draggedAppPackageName`, `dragOffsetY`) at the `Column` scope. Applied `Modifier.draggable` to the drag handle with live reorder on cross logic in `onDelta`. Applied `Modifier.graphicsLayer` with shadow, clip, shape, and `translationY` to the dragged row for elevated rendering. Applied `Modifier.background(surfaceContainer)` for the dragged item background. Added item height measurement via `onGloballyPositioned`. |
+| `gradle/libs.versions.toml` | Added `reorderable = "3.1.0"` in `[versions]` and `reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }` in `[libraries]`. |
+| `app/build.gradle.kts` | Added `implementation(libs.reorderable)` in `dependencies`. |
+| `ui/AppScreen.kt` | Replaced manual drag implementation with Reorderable. Removed manual drag state (`measuredItemHeightPx`, `draggedAppPackageName`, `dragOffsetY`). Removed old imports (`Orientation`, `draggable`, `rememberDraggableState`, `MutableInteractionSource`, `GraphicsLayerScope`, `onGloballyPositioned`, `clip`). Added imports for `ReorderableItem`, `rememberReorderableLazyListState`. Added `rememberReorderableLazyListState` with `onReorderApp` callback. Wrapped items with `ReorderableItem(state, key, enabled)` where `enabled` is `searchQuery.isBlank()`. Used `scope.draggableHandle()` for the drag handle. Used `isDragging` for conditional background. Placed Divider before `ReorderableItem` (outside draggable scope). |
 
 #### Key Implementation Details
 
-**ViewModel pure function**: `reorderApp(fromIndex, toIndex)` returns a new list with the item moved from `fromIndex` to `toIndex`. Handles edge cases: equal indices, out-of-bounds indices. Does not modify `_apps.value` — follows the same pattern as remove/rename where the caller manages state updates.
+**Reorderable dependency**: Version 3.1.0 of `sh.calvin.reorderable:reorderable`, added via Gradle version catalog. Compatible with Compose BOM 2025.02.00, Kotlin 2.3.0, and AGP 8.9.1. Verified via [GitHub README](https://github.com/Calvin-LL/Reorderable) and [Maven Central](https://central.sonatype.com/artifact/sh.calvin.reorderable/reorderable/3.1.0).
 
-**Drag handle**: A `Box` of `56.dp` containing `Icons.Filled.DragIndicator` (`28.dp`), rendered with `onSurfaceVariant` tint. Only visible when `searchQuery.isBlank()` — hidden during active search to avoid meaningless reorders on filtered subsets.
+**Reorderable state**: `rememberReorderableLazyListState(lazyListState)` takes the existing `LazyListState` and a callback `(LazyListItemInfo, LazyListItemInfo) -> Unit` that receives `from` and `to` item info. The callback calls `onReorderApp(from.index, to.index)`, passing the `LazyColumn` indices. Since drag is disabled during search (`enabled = false`), the indices always correspond to the full `apps` list.
 
-**Drag activation**: `Modifier.draggable` with `startDragImmediately = false` on the drag handle `Box`. Requires a long press to start dragging, preventing accidental drags during normal scrolling. `MutableInteractionSource` is provided to avoid ripple interference with the `LazyColumn` scroll.
+**ReorderableItem API** (v3.1.0): The function signature is `ReorderableItem(state: ReorderableLazyListState, key: Any, modifier: Modifier = Modifier, enabled: Boolean = true, contentModifier: Modifier = Modifier, content: @Composable ReorderableCollectionItemScope.(Boolean) -> Unit)`. Key parameters:
+- `state`: The `ReorderableLazyListState` from `rememberReorderableLazyListState`.
+- `key`: The unique item key (`packageName`), matching the `items()` key.
+- `enabled`: When `false`, the item cannot be dragged. Used to disable drag during search.
+- `content`: A lambda with `ReorderableCollectionItemScope` as receiver and `Boolean` (`isDragging`) as parameter.
 
-**Live reorder on cross**: In `onDelta`, `dragOffsetY` accumulates the drag delta. When `|dragOffsetY|` exceeds one full item height (`itemHeightPx`), the code calculates the target index (`fromIndex + itemsCrossed`), calls `onReorderApp` to swap the item in the list, and resets `dragOffsetY` to 0. The `LazyColumn` re-layouts with the new order immediately. This provides smooth, responsive reordering without complex animation state.
+**Drag handle**: `Modifier.draggableHandle()` is called as `scope.draggableHandle()` within the `ReorderableCollectionItemScope` receiver of the content lambda. The `ReorderableCollectionItemScope` interface provides `draggableHandle(modifier: Modifier, enabled: Boolean, ...): Modifier` that returns a modified `Modifier`. Applied to the drag handle `Box` using `.then(scope.draggableHandle(Modifier))`. Visible only when `searchQuery.isBlank()`.
 
-**Item height measurement**: Uses `Modifier.onGloballyPositioned` on the first rendered row to measure the actual row height in pixels. Falls back to `64.dp` (4dp padding + ~56dp content + 4dp padding) until measured. The measured value is stored in a `mutableStateOf` so all items use the same height for cross detection.
+**Conditional background**: The `isDragging` boolean parameter is used to conditionally apply `Modifier.background(surfaceContainer, shape = RoundedCornerShape(8.dp))` to the item's `Row`. This ensures the background is visible in all themes, including AMOLED where `surfaceContainer` is `0xFF1A1A1A`.
 
-**Dragged item visual feedback**:
-- `Modifier.graphicsLayer { shadowElevation = 8.dp.toPx(); clip = true; shape = RoundedCornerShape(8.dp); translationY = dragOffsetY }` — promotes to a separate GPU layer with shadow, clips to rounded corners, and translates at the compositor level (not layout level) so the item renders **above** siblings.
-- `Modifier.background(surfaceContainer)` — uses `surfaceContainer` instead of `surfaceVariant` so the background is visible in all themes. In the AMOLED theme, `surfaceVariant` is pure black (same as background), making the dragged item invisible. `surfaceContainer` is `0xFF1A1A1A` in AMOLED, matching the navigation bar color.
+**Divider placement**: The `Divider` is placed **before** the `ReorderableItem` call within the `items()` lambda, using `filtered.indexOf(app) > 0` as the condition. This keeps the divider outside the draggable item, avoiding layout issues during drag.
 
-**Drag lifecycle**:
-- `onDragStarted`: Sets `draggedAppPackageName` to identify the dragged item across recompositions, resets `dragOffsetY` to 0.
-- `onDelta`: Accumulates offset, triggers live reorder when crossing item boundaries.
-- `onDragStopped`: Clears `draggedAppPackageName`, resets `dragOffsetY` to 0, ending the drag session.
+**Search mode handling**: When `searchQuery` is not blank, `isDragEnabled` is `false`, which sets `enabled = false` on every `ReorderableItem`. This prevents drag gestures on filtered subsets where indices don't correspond to the `apps` list. The drag handle `Box` is also hidden in this mode.
 
-**Sync on reorder**: Follows the exact pattern of remove/rename:
+**ViewModel pure function**: Unchanged. `reorderApp(fromIndex, toIndex)` returns a new list with the item moved from `fromIndex` to `toIndex`.
+
+**Sync on reorder**: Unchanged. Follows the exact pattern of remove/rename:
 1. `viewModel.reorderApp(fromIndex, toIndex)` computes the new list.
 2. `reordered !== apps` check avoids redundant operations.
 3. `viewModel.setApps(reordered)` updates UI state.
@@ -182,19 +187,19 @@ Added the ability to manually reorder apps in the Home screen (`AppScreen.kt`) o
 5. `senderHelper.sendAppList(reordered, null)` sends to Pebble (async).
 6. `sendBroadcast(PebbleListenerService.ACTION_SEND_APP_LIST)` notifies the running service.
 
-**Compose API notes** (BOM 2025.02.00 / foundation 1.11.2):
-- `rememberDraggableState` takes only `onDelta: (Float) -> Unit` (no `onDragStarted`/`onDragEnd` parameters).
-- `Modifier.draggable` takes `state`, `orientation`, `startDragImmediately`, `interactionSource`, plus suspending `onDragStarted` and `onDragStopped: suspend CoroutineScope.(Float) -> Unit` (velocity as `Float`, not `DragEvent`).
-- `DragEvent` class is internal in this version — cannot be imported directly.
-- `LazyColumn` has no `animateItemPlacement` parameter in this version.
-- `Modifier.graphicsLayer` with lambda takes `GraphicsLayerScope` — use `translationY` (not `Modifier.offset`) to move at the compositor level for proper draw ordering.
-- `Modifier.shadow()` is a layout modifier that does not change draw order — replaced with `graphicsLayer { shadowElevation = ... }`.
+**Reorderable library API discovery**: The actual API was determined by decompiling the compiled classes from the AAR (`classes.jar`) using `javap`, since the Compose multiplatform entry points differ from the commonMain source. Key findings:
+- `ReorderableLazyListKt.ReorderableItem` takes `(LazyItemScope, ReorderableLazyListState, Any, Modifier, Boolean, Modifier, Function4<...>)` — the `enabled` parameter is the 5th positional parameter.
+- `ReorderableCollectionItemScope.draggableHandle` takes `(Modifier, Boolean, MutableInteractionSource?, Function1<Offset>, Function0<Unit>, DragGestureDetector)` and returns `Modifier`.
+- The library uses `Modifier.animateItem` internally for smooth item transition animations.
 
-**Debug refinements**:
-- Initial implementation used `Modifier.offset` which rendered the dragged item **under** siblings due to `LazyColumn` draw order. Fixed by switching to `graphicsLayer { translationY = ... }` which promotes to a separate GPU layer.
-- Initial implementation used `surfaceVariant` for the dragged item background, which is pure black in AMOLED theme (invisible). Fixed by using `surfaceContainer` (`0xFF1A1A1A` in AMOLED).
+**Reorderable features inherited**:
+- Automatic `zIndex(1f)` on dragged item (fixes Bug 1).
+- Auto-scroll when dragging near screen edges (fixes Bug 2).
+- Animated item transitions via `Modifier.animateItem`.
+- Support for items of different sizes.
+- Drag gesture with long press activation (default behavior).
 
-**Unchanged**: `LaunchApp` model, `AppDataStore` persistence format, `AppPickerDialog`, `SettingsScreen`, theme handling, permission dialogs, Pebble protocol, rename dialog, remove confirmation. All existing features remain fully functional.
+**Unchanged**: `LaunchApp` model, `AppDataStore` persistence format, `AppPickerDialog`, `SettingsScreen`, theme handling, permission dialogs, Pebble protocol, rename dialog, remove confirmation, sort dropdown. All existing features remain fully functional.
 
 #### Layout
 
@@ -215,7 +220,7 @@ Added the ability to manually reorder apps in the Home screen (`AppScreen.kt`) o
 └─────────────────────────────────┘
 ```
 
-During drag (item elevated, translated, with shadow):
+During drag (item elevated with background, correct zIndex):
 ```
 ┌─────────────────────────────────┐
 │ [Search field]                  │
@@ -225,8 +230,8 @@ During drag (item elevated, translated, with shadow):
 │  ───────────────────────────    │
 │                                 │  ← gap where TIDAL was
 │                                 │
-│ ┌───────────────────────────┐   │  ← elevated TIDAL (shadow + bg)
-│ │ [::] TIDAL    [✎] [🗑]  │   │
+│ ┌───────────────────────────┐   │  ← elevated TIDAL (bg visible)
+│ │ [::] TIDAL    [✎] [🗑]  │   │  ← correct zIndex, above siblings
 │ │    com.aspiro.tidal      │   │
 │ └───────────────────────────┘   │
 │  ───────────────────────────    │
@@ -237,13 +242,25 @@ During drag (item elevated, translated, with shadow):
 └─────────────────────────────────┘
 ```
 
+#### Bugs Fixed
+
+| Bug | Root cause | Fix |
+|---|---|---|
+| Background invisible dragging downward | Missing `zIndex` in manual `graphicsLayer`; item rendered behind overlapped sibling | Reorderable applies `zIndex(1f)` automatically |
+| List scrolls instead of item reordering | `LazyColumn` scroll handler consumed drag gesture | Reorderable manages scroll internally with auto-scroll at edges |
+
 #### Code Statistics
 
 | Component | Files | Lines changed |
 |---|---|---|
 | Watch App (C) | 0 | 0 (unchanged) |
-| Android App (Kotlin) | 3 | ~50 (string added, ViewModel method + callback in MainActivity, drag logic + handle + visual feedback in AppScreen) |
-| **Total** | **3** | **~50** |
+| Android App (Kotlin) | 3 | ~40 (version catalog + build.gradle updated, AppScreen rewritten with Reorderable) |
+| **Total** | **3** | **~40** |
+
+#### References
+
+- [Reorderable GitHub](https://github.com/Calvin-LL/Reorderable) — Library source, README, demo app examples
+- [Reorderable Maven Central](https://central.sonatype.com/artifact/sh.calvin.reorderable/reorderable/3.1.0) — Artifact metadata and version verification
 
 #### Build Status
 
