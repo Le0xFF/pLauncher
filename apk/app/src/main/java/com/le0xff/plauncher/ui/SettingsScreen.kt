@@ -12,6 +12,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -64,33 +66,53 @@ fun SettingsScreen(
                 AppTheme.Dark to stringResource(R.string.settings_theme_dark),
                 AppTheme.Amoled to stringResource(R.string.settings_theme_amoled)
             )
-            var expanded by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(
-                expanded = expanded,
-                onExpandedChange = { expanded = it }
+            var themeExpanded by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                TextField(
-                    value = themeLabels[currentTheme] ?: stringResource(R.string.settings_theme_light),
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text(stringResource(R.string.settings_theme)) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = stringResource(R.string.settings_theme), style = MaterialTheme.typography.bodyLarge)
+                    Text(text = stringResource(R.string.settings_theme_desc), style = MaterialTheme.typography.bodySmall)
+                }
+            ExposedDropdownMenuBox(
+                    expanded = themeExpanded,
+                    onExpandedChange = { themeExpanded = it }
+                ) {
+                    Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor()
-                )
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .widthIn(min = 80.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = themeLabels[currentTheme] ?: stringResource(R.string.settings_theme_light),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Icon(
+                            imageVector = if (themeExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 ExposedDropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false }
+                    expanded = themeExpanded,
+                    onDismissRequest = { themeExpanded = false }
                 ) {
                     themeLabels.forEach { (theme, label) ->
                         DropdownMenuItem(
                             text = { Text(label) },
                             onClick = {
                                 onThemeChange(theme)
-                                expanded = false
+                                    themeExpanded = false
                             }
                         )
+                    }
                     }
                 }
             }
@@ -142,16 +164,16 @@ fun SettingsScreen(
                 ) {
                     Row(
                         modifier = Modifier
-                            .clickable { vibeExpanded = true }
-                            .menuAnchor()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .widthIn(min = 80.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = vibeLabels[vibrationPref] ?: stringResource(R.string.settings_vibration_none),
                             style = MaterialTheme.typography.bodyMedium
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
                         Icon(
                             imageVector = if (vibeExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                             contentDescription = null,
