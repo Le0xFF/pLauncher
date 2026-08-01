@@ -92,6 +92,24 @@ class PebbleSenderHelper(context: Context) {
         return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
     }
 
+    suspend fun sendAutoLaunchPref(enabled: UInt): TransmissionResult {
+        val dict: PebbleDictionary = mapOf(
+            0u to PebbleDictionaryItem.UInt8(15),
+            13u to PebbleDictionaryItem.UInt8(if (enabled == 1u) 1 else 0)
+        )
+        val result = sender.sendDataToPebble(WATCH_APP_UUID, dict, null)
+        return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
+    }
+
+    suspend fun sendAutoLaunchTarget(index: UInt): TransmissionResult {
+        val dict: PebbleDictionary = mapOf(
+            0u to PebbleDictionaryItem.UInt8(16),
+            14u to PebbleDictionaryItem.UInt8(index.toInt())
+        )
+        val result = sender.sendDataToPebble(WATCH_APP_UUID, dict, null)
+        return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
+    }
+
     suspend fun sendLaunchConfirm(success: Boolean): TransmissionResult {
         val dict: PebbleDictionary = mapOf(
             0u to PebbleDictionaryItem.UInt8(12),

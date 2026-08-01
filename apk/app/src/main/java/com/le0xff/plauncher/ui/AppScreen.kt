@@ -11,6 +11,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.Edit
@@ -20,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -42,6 +45,9 @@ fun AppScreen(
     onSortApps: (SortOrder) -> Unit,
     appCount: Int,
     maxApps: Int,
+    autoLaunchEnabled: Boolean,
+    autoLaunchTarget: Int,
+    onAutoLaunchTargetChange: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val filtered = remember(apps, searchQuery) {
@@ -197,6 +203,36 @@ fun AppScreen(
                             Text(app.packageName, style = MaterialTheme.typography.bodySmall)
                         }
                         Row(modifier = Modifier.padding(start = 8.dp)) {
+                            val appIndex = apps.indexOf(app)
+                            val isAutoLaunchTarget = appIndex == autoLaunchTarget
+                            val ringColor = if (isAutoLaunchTarget) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            val circleAlpha = if (autoLaunchEnabled) 1f else 0.3f
+                            IconButton(
+                                onClick = { onAutoLaunchTargetChange(appIndex) },
+                                enabled = autoLaunchEnabled,
+                                modifier = Modifier.size(56.dp)
+                            ) {
+                                Canvas(modifier = Modifier.size(28.dp)) {
+                                    val radius = size.width / 2f
+                                    val strokeWidth = 2.dp.toPx()
+                                    val dotRadius = (radius - strokeWidth) * 0.6f
+                                    drawCircle(
+                                        color = ringColor.copy(alpha = circleAlpha),
+                                        radius = radius - strokeWidth / 2f,
+                                        style = Stroke(strokeWidth)
+                                    )
+                                    if (isAutoLaunchTarget) {
+                                        drawCircle(
+                                            color = ringColor.copy(alpha = circleAlpha),
+                                            radius = dotRadius
+                                        )
+                                    }
+                                }
+                            }
                             IconButton(
                                 onClick = { onRenameApp(app) },
                                 modifier = Modifier.size(56.dp)

@@ -140,12 +140,16 @@ class PebbleListenerService : BasePebbleListenerService() {
         senderHelper?.let { helper ->
             helper.sendWelcome(watch)
             dataStore?.reloadApps()
-            val apps = dataStore?.apps?.value ?: emptyList()
-            helper.sendAppList(apps, watch)
             val pref = dataStore?.getVibrationPref() ?: 0
             helper.sendVibrationPref(pref.toUInt())
             val autoClose = dataStore?.getAutoClose() ?: false
             helper.sendAutoClosePref(if (autoClose) 1u else 0u)
+            val autoLaunch = dataStore?.getAutoLaunchEnabled() ?: false
+            helper.sendAutoLaunchPref(if (autoLaunch) 1u else 0u)
+            val autoLaunchTarget = dataStore?.getAutoLaunchTarget() ?: 0
+            helper.sendAutoLaunchTarget(autoLaunchTarget.toUInt())
+            val apps = dataStore?.apps?.value ?: emptyList()
+            helper.sendAppList(apps, watch)
         }
         updateNotification(getString(R.string.status_connected))
         return ReceiveResult.Ack

@@ -45,6 +45,8 @@ fun SettingsScreen(
     onVibrationPrefChange: (Int) -> Unit,
     autoClose: Boolean,
     onAutoCloseChange: (Boolean) -> Unit,
+    autoLaunch: Boolean,
+    onAutoLaunchChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -213,6 +215,21 @@ fun SettingsScreen(
                     Text(text = stringResource(R.string.settings_auto_close_desc), style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = autoClose, onCheckedChange = onAutoCloseChange)
+            }
+
+            HorizontalDivider()
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = stringResource(R.string.settings_auto_launch), style = MaterialTheme.typography.bodyLarge)
+                    Text(text = stringResource(R.string.settings_auto_launch_desc), style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = autoLaunch, onCheckedChange = onAutoLaunchChange)
             }
         }
 

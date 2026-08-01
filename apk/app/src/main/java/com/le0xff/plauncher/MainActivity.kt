@@ -73,6 +73,12 @@ class AppViewModel : ViewModel() {
     private val _autoClose = MutableStateFlow(false)
     val autoClose: StateFlow<Boolean> = _autoClose.asStateFlow()
 
+    private val _autoLaunchEnabled = MutableStateFlow(false)
+    val autoLaunchEnabled: StateFlow<Boolean> = _autoLaunchEnabled.asStateFlow()
+
+    private val _autoLaunchTarget = MutableStateFlow(0)
+    val autoLaunchTarget: StateFlow<Int> = _autoLaunchTarget.asStateFlow()
+
     fun setApps(newApps: List<LaunchApp>) {
         _apps.value = newApps
     }
@@ -136,6 +142,14 @@ class AppViewModel : ViewModel() {
         _autoClose.value = value
     }
 
+    fun setAutoLaunchEnabled(value: Boolean) {
+        _autoLaunchEnabled.value = value
+    }
+
+    fun setAutoLaunchTarget(value: Int) {
+        _autoLaunchTarget.value = value
+    }
+
     fun onActivityResume() {
         _resumeCounter.value++
     }
@@ -149,6 +163,17 @@ class MainActivity : ComponentActivity() {
     private val viewModel = AppViewModel()
     private lateinit var appDataStore: AppDataStore
     private lateinit var senderHelper: PebbleSenderHelper
+
+    private fun validateAutoLaunchTarget(apps: List<LaunchApp>) {
+        val target = viewModel.autoLaunchTarget.value
+        if (target >= apps.size && apps.isNotEmpty()) {
+            viewModel.setAutoLaunchTarget(0)
+            appDataStore.setAutoLaunchTarget(0)
+            coroutineScope.launch {
+                senderHelper.sendAutoLaunchTarget(0u)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -172,6 +197,8 @@ class MainActivity : ComponentActivity() {
                 val resumeCounter by viewModel.resumeCounter.collectAsState()
                 val vibrationPref by viewModel.vibrationPref.collectAsState()
                 val autoClose by viewModel.autoClose.collectAsState()
+                val autoLaunchEnabled by viewModel.autoLaunchEnabled.collectAsState()
+                val autoLaunchTarget by viewModel.autoLaunchTarget.collectAsState()
 
                 val initialStatus = stringResource(R.string.status_disconnected)
                 LaunchedEffect(Unit) {
@@ -181,6 +208,8 @@ class MainActivity : ComponentActivity() {
                     viewModel.setAppTheme(dataStore.getAppTheme())
                     viewModel.setVibrationPref(dataStore.getVibrationPref())
                     viewModel.setAutoClose(dataStore.getAutoClose())
+                    viewModel.setAutoLaunchEnabled(dataStore.getAutoLaunchEnabled())
+                    viewModel.setAutoLaunchTarget(dataStore.getAutoLaunchTarget())
                     viewModel.setConnectionStatus(initialStatus)
                 }
 
@@ -301,6 +330,7 @@ class MainActivity : ComponentActivity() {
                                 if (reordered !== apps) {
                                     viewModel.setApps(reordered)
                                     dataStore.saveApps(reordered)
+                                    validateAutoLaunchTarget(reordered)
                                     coroutineScope.launch {
                                         senderHelper.sendAppList(reordered, null)
                                     }
@@ -312,6 +342,7 @@ class MainActivity : ComponentActivity() {
                                 if (sorted !== apps) {
                                     viewModel.setApps(sorted)
                                     dataStore.saveApps(sorted)
+                                    validateAutoLaunchTarget(sorted)
                                     coroutineScope.launch {
                                         senderHelper.sendAppList(sorted, null)
                                     }
@@ -320,6 +351,15 @@ class MainActivity : ComponentActivity() {
                             },
                             appCount = apps.size,
                             maxApps = MAX_APPS,
+                            autoLaunchEnabled = autoLaunchEnabled,
+                            autoLaunchTarget = autoLaunchTarget,
+                            onAutoLaunchTargetChange = {
+                                viewModel.setAutoLaunchTarget(it)
+                                dataStore.setAutoLaunchTarget(it)
+                                coroutineScope.launch {
+                                    senderHelper.sendAutoLaunchTarget(it.toUInt())
+                                }
+                            },
                             modifier = Modifier.padding(padding)
                         )
                     } else {
@@ -357,6 +397,14 @@ class MainActivity : ComponentActivity() {
                                     senderHelper.sendAutoClosePref(if (it) 1u else 0u)
                                 }
                             },
+                            autoLaunch = autoLaunchEnabled,
+                            onAutoLaunchChange = {
+                                viewModel.setAutoLaunchEnabled(it)
+                                dataStore.setAutoLaunchEnabled(it)
+                                coroutineScope.launch {
+                                    senderHelper.sendAutoLaunchPref(if (it) 1u else 0u)
+                                }
+                            },
                             modifier = Modifier.padding(padding)
                         )
                     }
@@ -375,6 +423,7 @@ class MainActivity : ComponentActivity() {
                                 val updatedApps = apps.filter { it.packageName != targetApp.packageName }
                                 dataStore.saveApps(updatedApps)
                                 viewModel.setApps(updatedApps)
+                                validateAutoLaunchTarget(updatedApps)
                                 viewModel.setRemoveAppTarget(null)
                                 coroutineScope.launch {
                                     senderHelper.sendAppList(updatedApps, null)
@@ -429,6 +478,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 dataStore.saveApps(updatedApps)
                                 viewModel.setApps(updatedApps)
+                                validateAutoLaunchTarget(updatedApps)
                                 viewModel.setRenameAppTarget(null)
                                 coroutineScope.launch {
                                     senderHelper.sendAppList(updatedApps, null)
@@ -451,6 +501,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     dataStore.saveApps(updatedApps)
                                     viewModel.setApps(updatedApps)
+                                    validateAutoLaunchTarget(updatedApps)
                                     viewModel.setRenameAppTarget(null)
                                     coroutineScope.launch {
                                         senderHelper.sendAppList(updatedApps, null)
@@ -473,6 +524,7 @@ class MainActivity : ComponentActivity() {
                             onConfirm = { selectedApps ->
                                 dataStore.saveApps(selectedApps)
                                 viewModel.setApps(selectedApps)
+                                validateAutoLaunchTarget(selectedApps)
                                 viewModel.setShowPicker(false)
                                 // Push updated list to watch using MainActivity's own sender
                                 coroutineScope.launch {
