@@ -98,4 +98,23 @@
     <string name="appscreen_app_count">App count</string>
     <string name="picker_limit_reached">Maximum of 20 apps reached</string>
     <string name="rename_char_count">%d/32</string>
+    <string name="settings_section_import_export">Import/Export</string>
+    <string name="settings_import_export_desc">Import or export the app list in the expected YAML format:</string>
+    <string name="settings_yaml_example">- package: "com.example.app"\n\u0020\u0020custom_name: "My App"\n\u0020\u0020position: 0\n\u0020\u0020auto_launch: false</string>
+    <string name="button_import">Import</string>
+    <string name="button_export">Export</string>
+    <string name="import_success">Apps imported successfully</string>
+    <string name="import_failed">Failed to import app list</string>
+    <string name="export_success">App list exported</string>
+    <string name="import_empty_file">The imported file is empty or invalid</string>
+    <string name="import_skipped_apps">Apps not found or not installed</string>
+    <string name="import_duplicate_packages">Duplicate packages skipped</string>
+    <string name="import_duplicate_positions">Duplicate positions skipped</string>
+    <string name="import_position_out_of_range">Positions out of range skipped</string>
+    <string name="import_multiple_auto_launch">Multiple auto-launch targets found.\nOnly the first one is kept.</string>
+    <string name="import_max_apps_exceeded">Only the first 20 apps were imported. The remaining entries were skipped.</string>
+    <string name="import_confirm_title">Replace app list</string>
+    <string name="import_confirm_text">Importing will replace your current app list with %d apps from the file. This action cannot be undone.</string>
+    <string name="import_button_replace">Replace</string>
+    <string name="import_warnings_title">Import warnings</string>
 </resources>

@@ -56,7 +56,9 @@ fun pLauncherTheme(
         val controller = WindowCompat.getInsetsController(window, view)
         controller.isAppearanceLightStatusBars = !isDark
         controller.isAppearanceLightNavigationBars = !isDark
+        @Suppress("DEPRECATION")
         window.statusBarColor = AndroidColor.TRANSPARENT
+        @Suppress("DEPRECATION")
         window.navigationBarColor = AndroidColor.TRANSPARENT
     }
 

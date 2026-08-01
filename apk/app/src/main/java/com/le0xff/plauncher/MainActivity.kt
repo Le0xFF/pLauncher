@@ -1,11 +1,17 @@
 package com.le0xff.plauncher
 
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.core.content.FileProvider
+import java.io.File
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.Alignment
@@ -20,6 +26,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import com.le0xff.plauncher.data.AppDataStore
+import com.le0xff.plauncher.data.ImportResult
+import com.le0xff.plauncher.data.YamlExportImport
 import com.le0xff.plauncher.model.LaunchApp
 import com.le0xff.plauncher.model.SortOrder
 import com.le0xff.plauncher.ui.AppTheme
@@ -223,6 +231,103 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf(checkIgnoringBatteryOptimizations(this))
                 }
 
+                var importPendingResult: ImportResult? by remember { mutableStateOf(null) }
+                var importWarningsResult: ImportResult? by remember { mutableStateOf(null) }
+
+                val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                    if (result.resultCode != android.app.Activity.RESULT_OK) return@rememberLauncherForActivityResult
+                    val uri = result.data?.data ?: return@rememberLauncherForActivityResult
+                    val yamlContent = try {
+                        contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                    } catch (e: Exception) {
+                        Toast.makeText(this, R.string.import_failed, Toast.LENGTH_SHORT).show()
+                        return@rememberLauncherForActivityResult
+                    }
+                    if (yamlContent.isBlank()) {
+                        Toast.makeText(this, R.string.import_empty_file, Toast.LENGTH_SHORT).show()
+                        return@rememberLauncherForActivityResult
+                    }
+                    val parsedResult = try {
+                        YamlExportImport.importAppsFromYaml(yamlContent, packageManager, packageName)
+                    } catch (e: Exception) {
+                        Toast.makeText(this, R.string.import_failed, Toast.LENGTH_SHORT).show()
+                        return@rememberLauncherForActivityResult
+                    }
+                    if (parsedResult.apps.isEmpty() && parsedResult.skippedPackages.isEmpty() && !parsedResult.multipleAutoLaunch && !parsedResult.maxAppsExceeded && parsedResult.duplicatePackages.isEmpty() && parsedResult.duplicatePositionPackages.isEmpty() && parsedResult.outOfRangePackages.isEmpty()) {
+                        Toast.makeText(this, R.string.import_empty_file, Toast.LENGTH_SHORT).show()
+                        return@rememberLauncherForActivityResult
+                    }
+                    importPendingResult = parsedResult
+                }
+
+                fun applyImportResult(result: ImportResult) {
+                    if (result.apps.isNotEmpty()) {
+                        viewModel.setApps(result.apps)
+                        viewModel.setAutoLaunchTarget(result.autoLaunchTarget)
+                        dataStore.setAutoLaunchTarget(result.autoLaunchTarget)
+                        dataStore.saveApps(result.apps)
+                        validateAutoLaunchTarget(result.apps)
+                        coroutineScope.launch {
+                            senderHelper.sendAppList(result.apps, null)
+                            senderHelper.sendAutoLaunchTarget(result.autoLaunchTarget.toUInt())
+                        }
+                        sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
+                    }
+                    val hasWarnings = result.skippedPackages.isNotEmpty() ||
+                        result.duplicatePackages.isNotEmpty() ||
+                        result.duplicatePositionPackages.isNotEmpty() ||
+                        result.outOfRangePackages.isNotEmpty() ||
+                        result.multipleAutoLaunch ||
+                        result.maxAppsExceeded
+                    if (hasWarnings) {
+                        importWarningsResult = result
+                    }
+                }
+
+                fun buildOriginalNames(appsList: List<LaunchApp>): Map<String, String> {
+                    val map = mutableMapOf<String, String>()
+                    for (app in appsList) {
+                        try {
+                            val info = packageManager.getApplicationInfo(app.packageName, 0)
+                            map[app.packageName] = info.loadLabel(packageManager).toString().ifBlank { app.packageName }
+                        } catch (_: PackageManager.NameNotFoundException) {
+                            map[app.packageName] = app.displayName
+                        }
+                    }
+                    return map
+                }
+
+                val onExportClick: () -> Unit = {
+                    try {
+                        val originalNames = buildOriginalNames(apps)
+                        val yamlContent = dataStore.exportAppsToYaml(originalNames, autoLaunchTarget)
+                        val exportsDir = File(context.cacheDir, "exports")
+                        if (!exportsDir.exists()) exportsDir.mkdirs()
+                        val file = File(exportsDir, "plauncher_apps.yaml")
+                        file.writeText(yamlContent)
+                        val uri = FileProvider.getUriForFile(
+                            context, "com.le0xff.plauncher.fileprovider", file
+                        )
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/yaml"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            putExtra(Intent.EXTRA_SUBJECT, "pLauncher app list")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivity(Intent.createChooser(shareIntent, getString(R.string.button_export)))
+                    } catch (e: Exception) {
+                        Toast.makeText(context, R.string.import_failed, Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                val onImportClick: () -> Unit = {
+                    val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                        type = "*/*"
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                    }
+                    importLauncher.launch(intent)
+                }
+
                 var showPermissionDialog by remember { mutableStateOf(!canDrawOverlays.value || !ignoringBatteryOpt.value) }
                 var dismissedOnce by remember { mutableStateOf(false) }
 
@@ -406,6 +511,8 @@ class MainActivity : ComponentActivity() {
                                     senderHelper.sendAutoLaunchPref(if (it) 1u else 0u)
                                 }
                             },
+                            onExportClick = onExportClick,
+                            onImportClick = onImportClick,
                             modifier = Modifier.padding(padding)
                         )
                     }
@@ -535,15 +642,165 @@ class MainActivity : ComponentActivity() {
                                 viewModel.setApps(selectedApps)
                                 validateAutoLaunchTarget(selectedApps)
                                 viewModel.setShowPicker(false)
-                                // Push updated list to watch using MainActivity's own sender
                                 coroutineScope.launch {
                                     senderHelper.sendAppList(selectedApps, null)
                                 }
-                                // Also notify PebbleListenerService if it is running
                                 sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                             }
                         )
                     }
+
+                    importPendingResult?.let { result ->
+                        AlertDialog(
+                            onDismissRequest = {
+                                importPendingResult = null
+                            },
+                            title = { Text(stringResource(R.string.import_confirm_title)) },
+                            text = {
+                                Text(stringResource(R.string.import_confirm_text, result.apps.size))
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    importPendingResult = null
+                                    applyImportResult(result)
+                                }) {
+                                    Text(stringResource(R.string.import_button_replace))
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = {
+                                    importPendingResult = null
+                                }) {
+                                    Text(stringResource(R.string.button_cancel))
+                                }
+                            }
+                        )
+                    }
+    
+                importWarningsResult?.let { result ->
+                    AlertDialog(
+                        onDismissRequest = {
+                            importWarningsResult = null
+                        },
+                        title = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = "⚠️")
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.import_warnings_title))
+                            }
+                        },
+                        text = {
+                            Column(
+                                modifier = Modifier.padding(top = 4.dp)
+                            ) {
+                                HorizontalDivider()
+
+                                if (result.skippedPackages.isNotEmpty()) {
+                                    HorizontalDivider()
+                                    Text(
+                                        text = getString(R.string.import_skipped_apps),
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                    )
+                                    result.skippedPackages.forEach { pkg ->
+                                        Text(
+                                            text = "  $pkg",
+                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(start = 8.dp)
+                                        )
+                                    }
+                                }
+
+                                if (result.duplicatePackages.isNotEmpty()) {
+                                    HorizontalDivider()
+                                    Text(
+                                        text = getString(R.string.import_duplicate_packages),
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                    )
+                                    result.duplicatePackages.forEach { pkg ->
+                                        Text(
+                                            text = "  $pkg",
+                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(start = 8.dp)
+                                        )
+                                    }
+                                }
+
+                                if (result.duplicatePositionPackages.isNotEmpty()) {
+                                    HorizontalDivider()
+                                    Text(
+                                        text = getString(R.string.import_duplicate_positions),
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                    )
+                                    result.duplicatePositionPackages.forEach { pkg ->
+                                        Text(
+                                            text = "  $pkg",
+                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(start = 8.dp)
+                                        )
+                                    }
+                                }
+
+                                if (result.outOfRangePackages.isNotEmpty()) {
+                                    HorizontalDivider()
+                                    Text(
+                                        text = getString(R.string.import_position_out_of_range),
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                    )
+                                    result.outOfRangePackages.forEach { pkg ->
+                                        Text(
+                                            text = "  $pkg",
+                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(start = 8.dp)
+                                        )
+                                    }
+                                }
+
+                                if (result.multipleAutoLaunch) {
+                                    HorizontalDivider()
+                                    Text(
+                                        text = getString(R.string.import_multiple_auto_launch),
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                    )
+                                    result.multipleAutoLaunchPackages.forEach { pkg ->
+                                        Text(
+                                            text = "  $pkg",
+                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(start = 8.dp)
+                                        )
+                                    }
+                                }
+
+                                if (result.maxAppsExceeded) {
+                                    HorizontalDivider()
+                                    Text(
+                                        text = getString(R.string.import_max_apps_exceeded),
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                                        modifier = Modifier.padding(top = 8.dp)
+                                    )
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                importWarningsResult = null
+                            }) {
+                                Text(stringResource(R.string.button_done))
+                            }
+                        }
+                    )
+                }
                 }
             }
         }

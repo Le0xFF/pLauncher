@@ -65,7 +65,7 @@ class CrashReportActivity : ComponentActivity() {
                                                 style = MaterialTheme.typography.bodyLarge
                                             )
                                             Spacer(Modifier.height(16.dp))
-                                            Divider()
+                                            HorizontalDivider()
                                             Spacer(Modifier.height(16.dp))
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),

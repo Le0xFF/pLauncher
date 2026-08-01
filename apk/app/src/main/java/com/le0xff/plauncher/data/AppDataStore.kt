@@ -2,6 +2,7 @@ package com.le0xff.plauncher.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import com.le0xff.plauncher.model.LaunchApp
 import com.le0xff.plauncher.ui.AppTheme
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -141,5 +142,17 @@ class AppDataStore(private val context: Context) {
 
     private fun loadAutoLaunchTarget(): Int {
         return prefs.getInt(KEY_AUTO_LAUNCH_TARGET, 0)
+    }
+
+    fun exportAppsToYaml(originalNames: Map<String, String>, autoLaunchTarget: Int): String {
+        return YamlExportImport.exportAppsToYaml(_apps.value, originalNames, autoLaunchTarget)
+    }
+
+    fun importAppsFromYaml(yamlContent: String, packageManager: PackageManager): ImportResult {
+        val result = YamlExportImport.importAppsFromYaml(yamlContent, packageManager, context.packageName)
+        if (result.apps.isNotEmpty()) {
+            saveApps(result.apps)
+        }
+        return result
     }
 }

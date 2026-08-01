@@ -47,6 +47,8 @@ fun SettingsScreen(
     onAutoCloseChange: (Boolean) -> Unit,
     autoLaunch: Boolean,
     onAutoLaunchChange: (Boolean) -> Unit,
+    onExportClick: () -> Unit = {},
+    onImportClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -54,6 +56,7 @@ fun SettingsScreen(
     var watchappExpanded by remember { mutableStateOf(false) }
     var permissionsExpanded by remember { mutableStateOf(false) }
     var debugExpanded by remember { mutableStateOf(false) }
+    var importExportExpanded by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
@@ -230,6 +233,44 @@ fun SettingsScreen(
                     Text(text = stringResource(R.string.settings_auto_launch_desc), style = MaterialTheme.typography.bodySmall, maxLines = 2)
                 }
                 Switch(checked = autoLaunch, onCheckedChange = onAutoLaunchChange)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        AccordionCard(
+            title = stringResource(R.string.settings_section_import_export),
+            expanded = importExportExpanded,
+            onExpandedChange = { importExportExpanded = it }
+        ) {
+            Text(text = stringResource(R.string.settings_import_export_desc), style = MaterialTheme.typography.bodySmall)
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = stringResource(R.string.settings_yaml_example),
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onImportClick,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.button_import))
+                }
+                Button(
+                    onClick = onExportClick,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.button_export))
+                }
             }
         }
 
