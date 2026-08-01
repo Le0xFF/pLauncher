@@ -46,6 +46,12 @@
     <string name="settings_crash_the_app">Crash the application</string>
     <string name="settings_crash_the_app_desc">Triggers a test crash to verify crash reports</string>
     <string name="settings_crash_button">Crash</string>
+    <string name="button_save_logs">Save</string>
+    <string name="settings_save_logs">Save logs</string>
+    <string name="settings_save_logs_desc">Save current session logs to a text file</string>
+    <string name="logs_saved_success">Logs saved successfully</string>
+    <string name="logs_saved_error">Failed to save logs</string>
+    <string name="logs_empty">No logs available</string>
 
     <string name="settings_draw_overlays">Draw Over Other Apps</string>
     <string name="settings_draw_overlays_desc">Allows launching apps from background service</string>

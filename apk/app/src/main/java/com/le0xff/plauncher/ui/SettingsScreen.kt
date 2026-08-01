@@ -49,6 +49,7 @@ fun SettingsScreen(
     onAutoLaunchChange: (Boolean) -> Unit,
     onExportClick: () -> Unit = {},
     onImportClick: () -> Unit = {},
+    onSaveLogsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -380,6 +381,26 @@ fun SettingsScreen(
                     Text(text = stringResource(R.string.settings_crash_reports_desc), style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = generateCrashReports, onCheckedChange = onGenerateCrashReportsChange)
+            }
+
+            HorizontalDivider()
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = stringResource(R.string.settings_save_logs), style = MaterialTheme.typography.bodyLarge)
+                    Text(text = stringResource(R.string.settings_save_logs_desc), style = MaterialTheme.typography.bodySmall)
+                }
+                Button(
+                    onClick = onSaveLogsClick,
+                    contentPadding = PaddingValues(horizontal = 12.dp)
+                ) {
+                    Text(stringResource(R.string.button_save_logs))
+                }
             }
 
             HorizontalDivider()

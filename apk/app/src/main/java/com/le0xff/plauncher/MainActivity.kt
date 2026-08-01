@@ -26,6 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import com.le0xff.plauncher.data.AppDataStore
+import com.le0xff.plauncher.data.AppLogBuffer
 import com.le0xff.plauncher.data.ImportResult
 import com.le0xff.plauncher.data.YamlExportImport
 import com.le0xff.plauncher.model.LaunchApp
@@ -186,6 +187,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppLogBuffer.info("MainActivity", "App started")
         appDataStore = AppDataStore(this)
         senderHelper = PebbleSenderHelper(this)
 
@@ -255,10 +257,12 @@ class MainActivity : ComponentActivity() {
                         Toast.makeText(this, R.string.import_empty_file, Toast.LENGTH_SHORT).show()
                         return@rememberLauncherForActivityResult
                     }
+                    AppLogBuffer.info("MainActivity", "Import parsed: ${parsedResult.apps.size} apps")
                     importPendingResult = parsedResult
                 }
 
                 fun applyImportResult(result: ImportResult) {
+                    AppLogBuffer.info("MainActivity", "Import applied: ${result.apps.size} apps")
                     if (result.apps.isNotEmpty()) {
                         viewModel.setApps(result.apps)
                         viewModel.setAutoLaunchTarget(result.autoLaunchTarget)
@@ -296,6 +300,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val onExportClick: () -> Unit = {
+                    AppLogBuffer.info("MainActivity", "Export initiated")
                     try {
                         val originalNames = buildOriginalNames(apps)
                         val yamlContent = dataStore.exportAppsToYaml(originalNames, autoLaunchTarget)
@@ -319,11 +324,39 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val onImportClick: () -> Unit = {
+                    AppLogBuffer.info("MainActivity", "Import initiated")
                     val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                         type = "*/*"
                         addCategory(Intent.CATEGORY_OPENABLE)
                     }
                     importLauncher.launch(intent)
+                }
+
+                val onSaveLogsClick: () -> Unit = onSaveLogs@{
+                    AppLogBuffer.info("MainActivity", "Save logs initiated")
+                    try {
+                        val entries = AppLogBuffer.getEntries()
+                        if (entries.isEmpty()) {
+                            Toast.makeText(context, R.string.logs_empty, Toast.LENGTH_SHORT).show()
+                            return@onSaveLogs
+                        }
+                        val logContent = AppLogBuffer.getLogsAsString()
+                        val exportsDir = File(context.cacheDir, "exports")
+                        if (!exportsDir.exists()) exportsDir.mkdirs()
+                        val file = File(exportsDir, "plauncher_logs.txt")
+                        file.writeText(logContent)
+                        val uri = FileProvider.getUriForFile(
+                            context, "com.le0xff.plauncher.fileprovider", file
+                        )
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivity(Intent.createChooser(shareIntent, getString(R.string.button_save_logs)))
+                    } catch (e: Exception) {
+                        Toast.makeText(context, R.string.logs_saved_error, Toast.LENGTH_SHORT).show()
+                    }
                 }
 
                 var showPermissionDialog by remember { mutableStateOf(!canDrawOverlays.value || !ignoringBatteryOpt.value) }
@@ -511,6 +544,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onExportClick = onExportClick,
                             onImportClick = onImportClick,
+                            onSaveLogsClick = onSaveLogsClick,
                             modifier = Modifier.padding(padding)
                         )
                     }
@@ -806,6 +840,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        AppLogBuffer.debug("MainActivity", "Activity resumed")
         viewModel.onActivityResume()
     }
 

@@ -7,6 +7,7 @@ import android.content.SharedPreferences
 import android.os.Build
 
 import com.le0xff.plauncher.R
+import com.le0xff.plauncher.data.AppLogBuffer
 import java.lang.Thread.UncaughtExceptionHandler
 
 class CrashApplication : Application() {
@@ -22,6 +23,7 @@ class CrashApplication : Application() {
         }
 
         Thread.setDefaultUncaughtExceptionHandler(UncaughtExceptionHandler { thread, ex ->
+            AppLogBuffer.error("CrashApp", "Uncaught exception: ${ex.javaClass.simpleName} - ${ex.message}")
             val enabled = prefs.getBoolean("generate_crash_reports", false)
             if (!enabled) {
                 android.os.Process.killProcess(android.os.Process.myPid())
