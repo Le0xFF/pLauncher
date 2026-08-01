@@ -516,3 +516,243 @@ Follows the exact same pattern as `onExportClick`: write to `cacheDir/exports/`,
 **Reused FileProvider**: The existing `file_paths.xml` already defines `<cache-path name="exports" path="exports/">`, so no manifest or XML changes were needed.
 
 **No-op safe**: `AppLogBuffer` calls never throw exceptions, so instrumentation cannot break existing flows.
+
+---
+
+## #24 — App Icons in Watchapp (Color and B/W)
+
+### Overview
+
+Added 32×32 app icons to the Pebble watchapp, transmitted from the Android companion app via AppMessage. The system supports **two icon formats** for future-proofing: Color (`GBitmapFormat8Bit`, 1,024 bytes/icon) for 64-color displays (basalt, emery), and B/W (`GBitmapFormat1Bit`, 128 bytes/icon) for monochrome displays (aplite, diorite, flint). The watch communicates its display capabilities in the Watch Welcome message. The phone stores both versions of every icon, converts Android app icons using `IconConverter`, and sends the correct format based on the watch's display type. The icon is displayed centered horizontally within the name area, vertically centered above the app name, with `GCompOpSet` compositing for transparency on color displays.
+
+### Analysis
+
+- **Previous state**: The watchapp displayed only app names and index. No visual identification of apps was possible beyond text.
+- **Icon size**: 32×32 chosen as the best compromise between visibility and resource constraints. 24×24 was too small on both displays. 48×48 would require icon chunking (exceeding AppMessage limits) and consume excessive RAM on basalt. 32×32 fits within the AppMessage buffer (1,024 B icon + ~120 B header = ~1,144 B < 2,048 B buffer) and leaves sufficient heap.
+- **Color format (GColor8)**: Each pixel = 1 byte `0bAARRGGBB` (AA=alpha 2-bit, RR=red 2-bit, GG=green 2-bit, BB=blue 2-bit). 32×32 = 1,024 bytes. Android conversion: scale to 32×32, quantize ARGB_8888 → GColor8 (`r8=(r>>6)&3`, `g8=(g>>6)&3`, `b8=(b>>6)&3`, `a8=if(a>=128) 3 else 0`).
+- **B/W format (1-bit)**: Each pixel = 1 bit (MSB first), rows padded to 4 bytes (32-bit alignment). 32 pixels = 4 bytes/row × 32 rows = 128 bytes. Android conversion: scale to 32×32, luminance threshold (`Y = 0.299R + 0.587G + 0.114B`, `Y>=128 → 1`), pack row-major with padding.
+- **Memory watch**: Basalt (color): 20 apps × (1,024 + 1 + 32 + 64) = 22,860 B icons + metadata. Total RAM footprint ~29,165 B, free heap ~36,371 B (within 64 KB). Emery (color): same footprint, 128 KB heap — no concern.
+- **AppMessage**: Increased buffer from 1,024 to 2,048 bytes to accommodate 32×32 color icons (1,024 B) plus name, package, and dictionary header (~120 B) within a single message.
+- **Persistence**: Both icon formats stored in SharedPreferences as hex-encoded strings. Backward-compatible: old records without icons (2 fields) load with null icons; new records (4 fields) decode both formats.
+- **Icon regeneration**: On each watch connection, icons are regenerated from Android's `PackageManager` using `IconConverter.getAppIconBitmaps()`, ensuring icons reflect current app states.
+- **Display type negotiation**: Watch sends `KEY_DISPLAY_TYPE` (key 15) in Watch Welcome: 1 for color, 0 for B/W. Phone reads this value and selects the correct icon format for `KEY_APP_ICON` (key 16).
+
+### Watch App (`pbw/`) — ~100 lines changed across 6 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `COMMUNICATION_PROTOCOL.md` | Added key 15 (`KEY_DISPLAY_TYPE`, UInt8, Watch→Phone) and key 16 (`KEY_APP_ICON`, Data, Phone→Watch). Added Icon Formats section documenting Color (GColor8, 1,024 B) and B/W (1-bit, 128 B) formats. Updated key 16 description with 32×32 dimensions and byte counts. |
+| `src/c/packets.h` | Added `#define KEY_DISPLAY_TYPE 15` and `#define KEY_APP_ICON 16`. |
+| `src/c/packets.c` | Added `dict_write_uint8(iter, KEY_DISPLAY_TYPE, PBL_IF_COLOR_ELSE(1, 0))` to `send_watch_welcome()`. Added `APP_LOG` for display type sent. In `handle_app_list()`: extract `KEY_APP_ICON` tuple, verify length, pass to `app_list_add()`. In `packets_init()`: increased `app_message_open(1024, 1024)` to `app_message_open(2048, 2048)`. |
+| `src/c/app_list.h` | Added `#include <pebble.h>`. Added icon constants: `APP_ICON_COLOR_SIZE` (1,024), `APP_ICON_BW_SIZE` (128), `APP_ICON_SIZE` (conditional), `APP_ICON_WIDTH` (32), `APP_ICON_HEIGHT` (32). Added `icon[APP_ICON_SIZE]` and `has_icon` fields to `LaunchApp` struct. Added `app_list_get_icon()` and `app_list_has_icon()` declarations. Updated `app_list_add()` signature to accept `icon_data` and `icon_len`. |
+| `src/c/app_list.c` | Added `#include <pebble.h>`. Added `app_list_get_icon()` and `app_list_has_icon()` implementations. Updated `app_list_add()` to copy icon data when `icon_len == APP_ICON_SIZE`, set `has_icon` flag. Added `APP_LOG` for icon stored/rejected with size mismatch debug info. |
+| `src/c/layout.h` | Added `LAYOUT_ICON_SIZE` (32) and `LAYOUT_ICON_V_PADDING` (8). |
+| `src/c/window_main.c` | Added `BitmapLayer* s_icon_layer` and `GBitmap* s_icon_bitmap` static variables. In `window_load()`: create `GBitmap` with `PBL_IF_COLOR_ELSE(GBitmapFormat8Bit, GBitmapFormat1Bit)`, create `BitmapLayer`, set `GCompOpSet` compositing, set `GColorClear` background. In `window_unload()`: destroy bitmap layer and bitmap. In `window_main_update_display()`: dynamic layout with icon centered on name area (`(w_name - LAYOUT_ICON_SIZE) / 2`), vertically centered with text below. Copy icon data to bitmap when `has_icon`, hide layer otherwise. Added `APP_LOG` for icon displayed/hidden. |
+
+#### Key Implementation Details
+
+**Conditional icon size** (`app_list.h`):
+```c
+#define APP_ICON_COLOR_SIZE 1024  // 32x32, 1 byte/pixel
+#define APP_ICON_BW_SIZE    128   // 32x32, 1-bit, 4-byte row padding
+#define APP_ICON_SIZE PBL_IF_COLOR_ELSE(APP_ICON_COLOR_SIZE, APP_ICON_BW_SIZE)
+```
+Uses `PBL_IF_COLOR_ELSE` to select the correct buffer size at compile time. Color platforms allocate 1,024 bytes per icon; B/W platforms allocate 128 bytes.
+
+**Conditional GBitmap format** (`window_main.c`):
+```c
+s_icon_bitmap = gbitmap_create_blank(
+    GSize(APP_ICON_WIDTH, APP_ICON_HEIGHT),
+    PBL_IF_COLOR_ELSE(GBitmapFormat8Bit, GBitmapFormat1Bit)
+);
+bitmap_layer_set_compositing_mode(s_icon_layer, GCompOpSet);
+bitmap_layer_set_background_color(s_icon_layer, GColorClear);
+```
+`GCompOpSet` ensures alpha transparency works correctly on color displays (pixels with alpha=0 are transparent).
+
+**Dynamic layout** (`window_main.c`):
+```c
+int icon_x = (w_name - LAYOUT_ICON_SIZE) / 2;
+int icon_y = (h - LAYOUT_NAME_FONT_HEIGHT - LAYOUT_ICON_SIZE - LAYOUT_ICON_V_PADDING * 2) / 2;
+int text_y = icon_y + LAYOUT_ICON_SIZE + LAYOUT_ICON_V_PADDING;
+```
+Icon centered horizontally within the name area (not full screen). Vertically, icon + padding + text are centered within the screen height.
+
+**Icon validation** (`packets.c` / `app_list.c`):
+```c
+// packets.c: extract and pass icon
+Tuple* iconTuple = dict_find(iter, KEY_APP_ICON);
+if (iconTuple) {
+    const uint8_t* iconData = iconTuple->value->data;
+    uint16_t iconLen = iconTuple->length;
+    app_list_add(name, package, iconData, iconLen);
+}
+
+// app_list.c: accept only correct size
+if (icon_data != NULL && icon_len == APP_ICON_SIZE) {
+    memcpy(s_apps[s_count].icon, icon_data, APP_ICON_SIZE);
+    s_apps[s_count].has_icon = true;
+} else {
+    s_apps[s_count].has_icon = false;
+}
+```
+Icons with mismatched sizes are silently rejected (has_icon = false), preventing corruption from stale or incompatible icon data.
+
+**AppMessage buffer increase** (`packets.c`):
+```c
+app_message_open(2048, 2048);  // was 1024, 1024
+```
+Required because 32×32 color icons (1,024 B) plus dictionary header (~120 B) exceed the original 1,024 B buffer. 2,048 B is the maximum supported by Pebble SDK.
+
+### Android Companion App (`apk/`) — ~150 lines changed across 6 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `model/LaunchApp.kt` | Added `val iconColorData: ByteArray? = null` (1,024 bytes GColor8) and `val iconBwData: ByteArray? = null` (128 bytes 1-bit padded). Default null maintains backward compatibility with existing code. |
+| `util/IconConverter.kt` (new) | Created utility object with `convertToPebbleColorIcon()` (32×32 GColor8, 1,024 bytes), `convertToPebbleBwIcon()` (32×32 1-bit padded, 128 bytes), and `getAppIconBitmaps()` (retrieves icon from PackageManager, handles `AdaptiveIconDrawable`, converts both formats). Added `AppLogBuffer.debug` for conversion results. |
+| `data/AppDataStore.kt` | Added hex encoding utilities (`bytesToHex`, `hexToBytes` with `decodeDigit`). Updated `saveApps()` to store `packageName|displayName|colorHex|bwHex`. Updated `loadApps()` to handle both 2-field (legacy, no icons) and 4-field (with icons) records. Added `refreshIcons()` that regenerates icons from `PackageManager` for all apps, persists, and returns updated list. |
+| `PebbleSenderHelper.kt` | Added `var watchDisplayType: Int = 1` property (1=color, 0=B/W). In `sendAppListChunks()`: select icon data based on `watchDisplayType` (`app.iconColorData` for color, `app.iconBwData` for B/W), include as `PebbleDictionaryItem.Bytes` in key 16. Added `AppLogBuffer.info` for send summary. |
+| `PebbleListenerService.kt` | In `handleWatchWelcome()`: read `KEY_DISPLAY_TYPE` (key 15) from incoming dictionary, set `senderHelper.watchDisplayType`. Call `dataStore.refreshIcons(packageManager)` before sending app list. Added `AppLogBuffer.info` for display type and icon refresh summary. In `updateReceiver`: also call `refreshIcons()` before resending app list. |
+
+#### Key Implementation Details
+
+**Icon conversion — Color** (`IconConverter.kt`):
+```kotlin
+fun convertToPebbleColorIcon(bitmap: Bitmap): ByteArray {
+    val scaled = Bitmap.createScaledBitmap(bitmap, 32, 32, true)
+    val pixels = IntArray(32 * 32)
+    scaled.getPixels(pixels, 0, 32, 0, 0, 32, 32)
+    scaled.recycle()
+    val result = ByteArray(32 * 32)
+    for (i in pixels.indices) {
+        val a8 = if (Color.alpha(pixels[i]) >= 128) 3 else 0
+        val r8 = (Color.red(pixels[i]) shr 6) and 3
+        val g8 = (Color.green(pixels[i]) shr 6) and 3
+        val b8 = (Color.blue(pixels[i]) shr 6) and 3
+        result[i] = ((a8 shl 6) or (r8 shl 4) or (g8 shl 2) or b8).toByte()
+    }
+    return result
+}
+```
+Scales to 32×32, quantizes ARGB_8888 to GColor8 (4 colors per channel = 16 colors × 2 alpha levels = 32 possible pixel values).
+
+**Icon conversion — B/W** (`IconConverter.kt`):
+```kotlin
+fun convertToPebbleBwIcon(bitmap: Bitmap): ByteArray {
+    val scaled = Bitmap.createScaledBitmap(bitmap, 32, 32, true)
+    val result = ByteArray(32 * 4)  // 32px → 4 bytes/row (padded to 32-bit alignment)
+    for (y in 0 until 32) {
+        for (x in 0 until 32) {
+            val luminance = 0.299 * R + 0.587 * G + 0.114 * B
+            val bit = if (luminance >= 128) 1 else 0
+            val byteOffset = y * 4 + (x shr 3)
+            result[byteOffset] = (result[byteOffset] or (bit shl (7 - (x and 7)))).toByte()
+        }
+    }
+    return result
+}
+```
+Scales to 32×32, threshold luminance, pack MSB-first. 32 pixels fit exactly in 4 bytes per row (no extra padding needed).
+
+**Persistence with backward compatibility** (`AppDataStore.kt`):
+```kotlin
+// Save: packageName|displayName|colorHex|bwHex
+val lines = apps.joinToString("\n") { app ->
+    "${app.packageName}|${app.displayName}|${bytesToHex(app.iconColorData)}|${bytesToHex(app.iconBwData)}"
+}
+
+// Load: handle 2-field (legacy) and 4-field (with icons)
+return@mapNotNull when (parts.size) {
+    2 -> LaunchApp(parts[0], parts[1])
+    4 -> LaunchApp(parts[0], parts[1], hexToBytes(parts[2]), hexToBytes(parts[3]))
+    else -> null
+}
+```
+Old records without icon data (2 fields) load with null icons. New records (4 fields) decode both formats. Empty hex fields decode to null.
+
+**Display type negotiation** (`PebbleListenerService.kt`):
+```kotlin
+val displayTypeItem = data[15u]
+val displayType = when (displayTypeItem) {
+    is PebbleDictionaryItem.UInt32 -> displayTypeItem.value.toInt()
+    is PebbleDictionaryItem.Int32  -> displayTypeItem.value
+    else -> 1  // default to color
+}
+senderHelper.watchDisplayType = displayType
+```
+Reads key 15 from Watch Welcome. Defaults to color (1) if not present (backward-compatible with older watches).
+
+**Icon selection** (`PebbleSenderHelper.kt`):
+```kotlin
+val iconData = if (watchDisplayType == 1) app.iconColorData else app.iconBwData
+if (iconData != null) {
+    put(16u, PebbleDictionaryItem.Bytes(iconData))
+}
+```
+Selects the correct format based on display type. `PebbleDictionaryItem.Bytes` serializes binary data in the AppMessage dictionary.
+
+#### Debug Logging
+
+| Component | Events Logged |
+|---|---|
+| `packets.c` | Watch welcome sent (display type), icon received (length vs. expected), app list chunk received |
+| `app_list.c` | Icon stored (app name, length), icon rejected (mismatched size) |
+| `window_main.c` | Icon displayed (app name), no icon (app name) |
+| `PebbleListenerService.kt` | Watch display type (Color/B/W), icons refreshed (count, with-color, with-B/W) |
+| `PebbleSenderHelper.kt` | App list sent (app count, icon count, format, bytes per icon) |
+| `IconConverter.kt` | Icon converted (package name, byte sizes), icon not found (package name) |
+
+#### Layout
+
+Watch display with icon:
+```
+┌─────────────────────────────────┐
+│                                 │
+│                                 │
+│          [ICON 32×32]           │
+│                                 │
+│         App Name                │
+│                                 │
+│                                 │
+│        1/5         UP           │
+│                                 │
+│                    LAUNCH       │
+│                                 │
+│                    DOWN         │
+│                                 │
+└─────────────────────────────────┘
+```
+Icon centered on name area (left portion), vertically centered with text below. Right column contains navigation labels.
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 6 | ~100 (packets.h 2, packets.c 10, app_list.h 10, app_list.c 20, layout.h 2, window_main.c 30, protocol doc 15, debug logs 15) |
+| Android App (Kotlin) | 6 | ~150 (LaunchApp.kt 2, IconConverter.kt 95 new, AppDataStore.kt 30, PebbleSenderHelper.kt 10, PebbleListenerService.kt 12, debug logs 10) |
+| **Total** | **12** | **~250** |
+
+#### Build Status
+
+- Watch app: `pebble build` — BUILD SUCCESSFUL. Basalt: 29,165 B RAM / 64 KB, 36,371 B free heap. Emery: 29,165 B RAM / 128 KB, 111,291 B free heap.
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL, zero Kotlin compiler warnings
+
+#### Design Decisions
+
+**32×32 uniform size**: Chosen over per-device sizing (32 basalt / 48 emery) to avoid icon chunking complexity. 32×32 color icons (1,024 B) fit within the 2,048 B AppMessage buffer with ~40% headroom for name + package + header.
+
+**AppMessage buffer 2,048 B**: Required for 32×32 color icons. The original 1,024 B buffer was insufficient. 2,048 B is the Pebble SDK maximum.
+
+**Both formats stored**: Phone stores both color and B/W versions of every icon. This allows sending the correct format based on display type, and future-proofs for B/W platforms without requiring icon regeneration.
+
+**Icon regeneration on connection**: Icons are regenerated from `PackageManager` on each watch connection, ensuring they reflect current app states (e.g., if an app is uninstalled, the icon gracefully becomes null).
+
+**Hex encoding for persistence**: Binary icon data is stored as hex strings in SharedPreferences, avoiding base64 dependency and keeping the serialization simple.
+
+**Graceful degradation**: Apps without icons still display correctly (hidden icon layer, name + index as before). Icon size mismatches are silently rejected, preventing corruption from stale data.
+
+**AdaptiveIconDrawable handling**: Android adaptive icons are rendered to a bitmap using the full drawable (both foreground and background layers), ensuring consistent appearance across icon types.
