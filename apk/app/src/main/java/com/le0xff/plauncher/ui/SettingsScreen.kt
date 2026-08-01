@@ -227,7 +227,7 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = stringResource(R.string.settings_auto_launch), style = MaterialTheme.typography.bodyLarge)
-                    Text(text = stringResource(R.string.settings_auto_launch_desc), style = MaterialTheme.typography.bodySmall)
+                    Text(text = stringResource(R.string.settings_auto_launch_desc), style = MaterialTheme.typography.bodySmall, maxLines = 2)
                 }
                 Switch(checked = autoLaunch, onCheckedChange = onAutoLaunchChange)
             }

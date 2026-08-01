@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -462,17 +463,25 @@ class MainActivity : ComponentActivity() {
                         },
                         title = { Text(stringResource(R.string.rename_dialog_title)) },
                         text = {
+                            Column {
                             OutlinedTextField(
                                 value = editName,
-                                onValueChange = { editName = it },
+                                onValueChange = { if (it.length <= 32) editName = it },
                                 placeholder = { Text(originalName, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true
                             )
+                                Text(
+                                    stringResource(R.string.rename_char_count, editName.length),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (editName.length >= 32) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.align(Alignment.End)
+                                )
+                            }
                         },
                         confirmButton = {
                             TextButton(onClick = {
-                                val finalName = if (editName.isBlank()) originalName else editName.take(32)
+                                val finalName = if (editName.isBlank()) originalName else editName
                                 val updatedApps = apps.map { a ->
                                     if (a.packageName == targetApp.packageName) LaunchApp(a.packageName, finalName) else a
                                 }
