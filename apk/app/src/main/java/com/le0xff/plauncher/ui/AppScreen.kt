@@ -1,17 +1,18 @@
 package com.le0xff.plauncher.ui
 
+import android.content.Context
 import android.content.pm.PackageManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material.icons.Icons
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragIndicator
@@ -21,8 +22,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -31,6 +32,7 @@ import com.le0xff.plauncher.R
 import com.le0xff.plauncher.model.LaunchApp
 import com.le0xff.plauncher.model.SortOrder
 import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.ReorderableCollectionItemScope
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @Composable
@@ -65,6 +67,15 @@ fun AppScreen(
     }
 
     var showSortMenu by remember { mutableStateOf(false) }
+
+    // Hoist theme colors, context, and icon cache out of LazyColumn to avoid per-item recomposition
+    val colorScheme = MaterialTheme.colorScheme
+    val typography = MaterialTheme.typography
+    val context = LocalContext.current
+    val appIndexMap = remember(apps) {
+        apps.mapIndexed { idx, app -> app.packageName to idx }.toMap()
+    }
+    val iconCache = remember(context) { mutableMapOf<String, ImageBitmap?>() }
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -127,15 +138,15 @@ fun AppScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                Text(if (apps.isEmpty()) stringResource(R.string.appscreen_empty) else stringResource(R.string.appscreen_no_match), style = MaterialTheme.typography.bodyMedium)
+                Text(if (apps.isEmpty()) stringResource(R.string.appscreen_empty) else stringResource(R.string.appscreen_no_match), style = typography.bodyMedium)
             }
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 state = listState
             ) {
-                items(filtered, key = { app -> app.packageName }) { app ->
-                    if (filtered.indexOf(app) > 0) {
+                itemsIndexed(filtered, key = { _, app -> app.packageName }) { index, app ->
+                    if (index > 0) {
                         HorizontalDivider(modifier = Modifier.padding(start = 16.dp))
                     }
 
@@ -144,8 +155,8 @@ fun AppScreen(
                         key = app.packageName,
                         enabled = isDragEnabled
                     ) { isDragging ->
-                    val context = LocalContext.current
                     val iconBitmap = remember(app.packageName) {
+                            iconCache.getOrPut(app.packageName) {
                         try {
                             val pm = context.packageManager
                             val info = pm.getApplicationInfo(app.packageName, 0)
@@ -157,7 +168,60 @@ fun AppScreen(
                             null
                         }
                     }
+                        }
 
+                        AppListItem(
+                            app = app,
+                            iconBitmap = iconBitmap,
+                            isDragging = isDragging,
+                            isDragEnabled = isDragEnabled,
+                            scope = this,
+                            appIndexMap = appIndexMap,
+                            autoLaunchEnabled = autoLaunchEnabled,
+                            autoLaunchTarget = autoLaunchTarget,
+                            onAutoLaunchTargetChange = onAutoLaunchTargetChange,
+                            onRenameApp = onRenameApp,
+                            onRemoveApp = onRemoveApp,
+                            colorScheme = colorScheme,
+                            typography = typography
+                        )
+                    }
+                }
+            }
+        }
+
+        FloatingActionButton(
+            onClick = onAddApp,
+            modifier = Modifier
+                .align(Alignment.End)
+                .padding(16.dp)
+                .widthIn(min = 100.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.button_add_app))
+                Text(" | ")
+                Text("$appCount/$maxApps")
+            }
+        }
+    }
+}
+
+@Composable
+fun AppListItem(
+    app: LaunchApp,
+    iconBitmap: ImageBitmap?,
+    isDragging: Boolean,
+    isDragEnabled: Boolean,
+    scope: ReorderableCollectionItemScope,
+    appIndexMap: Map<String, Int>,
+    autoLaunchEnabled: Boolean,
+    autoLaunchTarget: Int,
+    onAutoLaunchTargetChange: (Int) -> Unit,
+    onRenameApp: (LaunchApp) -> Unit,
+    onRemoveApp: (LaunchApp) -> Unit,
+    colorScheme: ColorScheme,
+    typography: Typography
+) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -165,7 +229,7 @@ fun AppScreen(
                             .then(
                                     if (isDragging) {
                                         Modifier.background(
-                                            MaterialTheme.colorScheme.surfaceContainer,
+                                            colorScheme.surfaceContainer,
                                             shape = RoundedCornerShape(8.dp)
                                         )
                                 } else {
@@ -178,7 +242,7 @@ fun AppScreen(
                             Box(
                                 modifier = Modifier
                                     .size(56.dp)
-                                        .draggableHandle()
+                                        .then(with(scope) { Modifier.draggableHandle() })
                             ) {
                                 Icon(
                                     Icons.Filled.DragIndicator,
@@ -186,7 +250,7 @@ fun AppScreen(
                                     modifier = Modifier
                                         .size(28.dp)
                                         .align(Alignment.Center),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -200,15 +264,15 @@ fun AppScreen(
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(app.displayName)
-                            Text(app.packageName, style = MaterialTheme.typography.bodySmall)
+                            Text(app.packageName, style = typography.bodySmall)
                         }
                         Row(modifier = Modifier.padding(start = 8.dp)) {
-                            val appIndex = apps.indexOf(app)
+                            val appIndex = appIndexMap[app.packageName] ?: -1
                             val isAutoLaunchTarget = appIndex == autoLaunchTarget
                             val ringColor = if (isAutoLaunchTarget) {
-                                MaterialTheme.colorScheme.primary
+                                colorScheme.primary
                             } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
+                                colorScheme.onSurfaceVariant
                             }
                             val circleAlpha = if (autoLaunchEnabled) 1f else 0.3f
                             IconButton(
@@ -216,19 +280,17 @@ fun AppScreen(
                                 enabled = autoLaunchEnabled,
                                 modifier = Modifier.size(56.dp)
                             ) {
-                                Canvas(modifier = Modifier.size(28.dp)) {
-                                    val radius = size.width / 2f
-                                    val strokeWidth = 2.dp.toPx()
-                                    val dotRadius = (radius - strokeWidth) * 0.6f
-                                    drawCircle(
-                                        color = ringColor.copy(alpha = circleAlpha),
-                                        radius = radius - strokeWidth / 2f,
-                                        style = Stroke(strokeWidth)
-                                    )
+                                Box(
+                                    modifier = Modifier
+                                    .size(28.dp)
+                                    .border(2.dp, ringColor.copy(alpha = circleAlpha), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                    ) {
                                     if (isAutoLaunchTarget) {
-                                        drawCircle(
-                                            color = ringColor.copy(alpha = circleAlpha),
-                                            radius = dotRadius
+                                Box(
+                                    modifier = Modifier
+                                    .size(12.dp)
+                                    .background(ringColor.copy(alpha = circleAlpha), CircleShape)
                                         )
                                     }
                                 }
@@ -250,28 +312,9 @@ fun AppScreen(
                                 Icon(
                                     Icons.Filled.Delete,
                                     contentDescription = stringResource(R.string.appscreen_remove),
-                                    tint = MaterialTheme.colorScheme.error,
+                                    tint = colorScheme.error,
                                     modifier = Modifier.size(28.dp)
                                 )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        FloatingActionButton(
-            onClick = onAddApp,
-            modifier = Modifier
-                .align(Alignment.End)
-                .padding(16.dp)
-                .widthIn(min = 100.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.button_add_app))
-                Text(" | ")
-                Text("$appCount/$maxApps")
             }
         }
     }

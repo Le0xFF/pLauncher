@@ -93,9 +93,12 @@ fun AppPickerDialog(
                                     }
                                 }
                             )
-                            app.icon?.let {
+                            val iconBitmap = remember(app.packageName) {
+                                app.icon?.toBitmap(48, 48)?.asImageBitmap()
+                            }
+                            iconBitmap?.let { bitmap ->
                                 Image(
-                                    bitmap = it.toBitmap(48, 48).asImageBitmap(),
+                                    bitmap = bitmap,
                                     contentDescription = null,
                                     modifier = Modifier.size(24.dp).padding(end = 8.dp)
                                 )

@@ -189,6 +189,17 @@ class MainActivity : ComponentActivity() {
         appDataStore = AppDataStore(this)
         senderHelper = PebbleSenderHelper(this)
 
+        // Load persisted data into ViewModel BEFORE setContent to avoid initial flash
+        viewModel.setApps(appDataStore.apps.value)
+        viewModel.setShowSystemApps(appDataStore.getShowSystemApps())
+        viewModel.setGenerateCrashReports(appDataStore.getGenerateCrashReports())
+        viewModel.setAppTheme(appDataStore.getAppTheme())
+        viewModel.setVibrationPref(appDataStore.getVibrationPref())
+        viewModel.setAutoClose(appDataStore.getAutoClose())
+        viewModel.setAutoLaunchEnabled(appDataStore.getAutoLaunchEnabled())
+        viewModel.setAutoLaunchTarget(appDataStore.getAutoLaunchTarget())
+        viewModel.setConnectionStatus(getString(R.string.status_disconnected))
+
         setContent {
             val appTheme by viewModel.appTheme.collectAsState()
             pLauncherTheme(theme = appTheme) {
@@ -208,19 +219,6 @@ class MainActivity : ComponentActivity() {
                 val autoClose by viewModel.autoClose.collectAsState()
                 val autoLaunchEnabled by viewModel.autoLaunchEnabled.collectAsState()
                 val autoLaunchTarget by viewModel.autoLaunchTarget.collectAsState()
-
-                val initialStatus = stringResource(R.string.status_disconnected)
-                LaunchedEffect(Unit) {
-                    viewModel.setApps(dataStore.apps.value)
-                    viewModel.setShowSystemApps(dataStore.getShowSystemApps())
-                    viewModel.setGenerateCrashReports(dataStore.getGenerateCrashReports())
-                    viewModel.setAppTheme(dataStore.getAppTheme())
-                    viewModel.setVibrationPref(dataStore.getVibrationPref())
-                    viewModel.setAutoClose(dataStore.getAutoClose())
-                    viewModel.setAutoLaunchEnabled(dataStore.getAutoLaunchEnabled())
-                    viewModel.setAutoLaunchTarget(dataStore.getAutoLaunchTarget())
-                    viewModel.setConnectionStatus(initialStatus)
-                }
 
                 var selectedTab by remember { mutableStateOf(0) }
 
