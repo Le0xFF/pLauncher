@@ -136,7 +136,7 @@ fun AppScreen(
             ) {
                 items(filtered, key = { app -> app.packageName }) { app ->
                     if (filtered.indexOf(app) > 0) {
-                        Divider(modifier = Modifier.padding(start = 16.dp))
+                        HorizontalDivider(modifier = Modifier.padding(start = 16.dp))
                     }
 
                     ReorderableItem(

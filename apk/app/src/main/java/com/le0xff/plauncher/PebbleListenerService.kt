@@ -105,7 +105,12 @@ class PebbleListenerService : BasePebbleListenerService() {
             // Receiver not registered
         }
         wakeLock?.let { if (it.isHeld) it.release() }
-        stopForeground(false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(false)
+        }
         senderHelper?.close()
         senderHelper = null
         dataStore = null
