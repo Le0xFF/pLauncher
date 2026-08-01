@@ -44,7 +44,7 @@ class PebbleListenerService : BasePebbleListenerService() {
             coroutineScope.launch {
                 senderHelper?.let { helper ->
                     dataStore?.reloadApps()
-                    val apps = dataStore?.apps?.value ?: emptyList()
+                    val apps = dataStore?.refreshIcons(packageManager) ?: emptyList()
                     helper.sendAppList(apps, null)
                 }
             }
@@ -135,7 +135,7 @@ class PebbleListenerService : BasePebbleListenerService() {
         wakeLock?.let { if (!it.isHeld) it.acquire() }
         return try {
             when (packetType) {
-            0 -> handleWatchWelcome(watch)
+            0 -> handleWatchWelcome(data, watch)
             1 -> handleLaunchApp(data, watch)
             else -> {
                 AppLogBuffer.error("PebbleService", "Unknown packet type: $packetType")
@@ -150,9 +150,17 @@ class PebbleListenerService : BasePebbleListenerService() {
         }
     }
 
-    private suspend fun handleWatchWelcome(watch: WatchIdentifier): ReceiveResult {
+    private suspend fun handleWatchWelcome(data: PebbleDictionary, watch: WatchIdentifier): ReceiveResult {
         AppLogBuffer.info("PebbleService", "Watch connected: $watch")
         senderHelper?.let { helper ->
+            val displayTypeItem = data[15u]
+            val displayType = when (displayTypeItem) {
+                is PebbleDictionaryItem.UInt32 -> displayTypeItem.value.toInt()
+                is PebbleDictionaryItem.Int32 -> displayTypeItem.value
+                else -> 1
+            }
+            helper.watchDisplayType = displayType
+            AppLogBuffer.info("PebbleService", "Watch display type: ${if (displayType == 1) "Color" else "B/W"}")
             helper.sendWelcome(watch)
             dataStore?.reloadApps()
             val pref = dataStore?.getVibrationPref() ?: 0
@@ -163,7 +171,8 @@ class PebbleListenerService : BasePebbleListenerService() {
             helper.sendAutoLaunchPref(if (autoLaunch) 1u else 0u)
             val autoLaunchTarget = dataStore?.getAutoLaunchTarget() ?: 0
             helper.sendAutoLaunchTarget(autoLaunchTarget.toUInt())
-            val apps = dataStore?.apps?.value ?: emptyList()
+            val apps = dataStore?.refreshIcons(packageManager) ?: emptyList()
+            AppLogBuffer.info("PebbleService", "Icons refreshed: ${apps.size} apps, ${apps.count { it.iconColorData != null }} with color icon, ${apps.count { it.iconBwData != null }} with B/W icon")
             helper.sendAppList(apps, watch)
         }
         updateNotification(getString(R.string.status_connected))

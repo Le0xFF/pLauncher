@@ -231,9 +231,17 @@ static void handle_app_list(DictionaryIterator* iter) {
 
     Tuple* nameTuple = dict_find(iter, KEY_APP_NAME);
     Tuple* pkgTuple = dict_find(iter, KEY_APP_PACKAGE);
+    Tuple* iconTuple = dict_find(iter, KEY_APP_ICON);
 
     if (nameTuple && pkgTuple) {
-        app_list_add(nameTuple->value->cstring, pkgTuple->value->cstring);
+        if (iconTuple) {
+            const uint8_t* iconData = iconTuple->value->data;
+            uint16_t iconLen = iconTuple->length;
+            APP_LOG(APP_LOG_LEVEL_DEBUG, "App icon received: len=%d, expected=%d", iconLen, APP_ICON_SIZE);
+            app_list_add(nameTuple->value->cstring, pkgTuple->value->cstring, iconData, iconLen);
+        } else {
+            app_list_add(nameTuple->value->cstring, pkgTuple->value->cstring, NULL, 0);
+        }
     }
 
     if (is_last) {
@@ -349,7 +357,7 @@ bool packets_is_loading(void) {
 }
 
 void packets_init(void) {
-    app_message_open(1024, 1024);
+    app_message_open(2048, 2048);
     app_message_register_outbox_sent(outbound_sent_handler);
     app_message_register_outbox_failed(outbound_failed_handler);
     app_message_register_inbox_received(inbox_received_handler);
@@ -373,6 +381,8 @@ void send_watch_welcome(void) {
     if (app_message_outbox_begin(&iter) == APP_MSG_OK) {
         dict_write_uint16(iter, KEY_PROTOCOL_VERSION, 1);
         dict_write_uint8(iter, KEY_PACKET_TYPE, PACKET_TYPE_WATCH_WELCOME);
+        dict_write_uint8(iter, KEY_DISPLAY_TYPE, PBL_IF_COLOR_ELSE(1, 0));
+        APP_LOG(APP_LOG_LEVEL_INFO, "Watch welcome sent: display_type=%d", PBL_IF_COLOR_ELSE(1, 0));
         app_message_outbox_send();
     }
 }

@@ -7,5 +7,7 @@ enum class SortOrder {
 
 data class LaunchApp(
     val packageName: String,
-    val displayName: String
+    val displayName: String,
+    val iconColorData: ByteArray? = null,
+    val iconBwData: ByteArray? = null
 )
