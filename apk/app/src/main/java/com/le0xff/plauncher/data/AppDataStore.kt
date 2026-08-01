@@ -17,6 +17,8 @@ class AppDataStore(private val context: Context) {
         private const val KEY_THEME = "theme"
         private const val KEY_VIBRATION_PREF = "vibration_pref"
         private const val KEY_AUTO_CLOSE = "auto_close"
+        private const val KEY_AUTO_LAUNCH = "auto_launch"
+        private const val KEY_AUTO_LAUNCH_TARGET = "auto_launch_target"
         private const val SEP = "|"
         private const val LINE_SEP = "\n"
     }
@@ -38,6 +40,12 @@ class AppDataStore(private val context: Context) {
 
     private val _autoClose = MutableStateFlow<Boolean>(loadAutoClose())
     val autoClose: StateFlow<Boolean> = _autoClose
+
+    private val _autoLaunchEnabled = MutableStateFlow<Boolean>(loadAutoLaunchEnabled())
+    val autoLaunchEnabled: StateFlow<Boolean> = _autoLaunchEnabled
+
+    private val _autoLaunchTarget = MutableStateFlow<Int>(loadAutoLaunchTarget())
+    val autoLaunchTarget: StateFlow<Int> = _autoLaunchTarget
 
     fun saveApps(apps: List<LaunchApp>) {
         _apps.value = apps
@@ -111,5 +119,27 @@ class AppDataStore(private val context: Context) {
 
     private fun loadAutoClose(): Boolean {
         return prefs.getBoolean(KEY_AUTO_CLOSE, false)
+    }
+
+    fun getAutoLaunchEnabled(): Boolean = _autoLaunchEnabled.value
+
+    fun setAutoLaunchEnabled(value: Boolean) {
+        _autoLaunchEnabled.value = value
+        prefs.edit().putBoolean(KEY_AUTO_LAUNCH, value).apply()
+    }
+
+    private fun loadAutoLaunchEnabled(): Boolean {
+        return prefs.getBoolean(KEY_AUTO_LAUNCH, false)
+    }
+
+    fun getAutoLaunchTarget(): Int = _autoLaunchTarget.value
+
+    fun setAutoLaunchTarget(value: Int) {
+        _autoLaunchTarget.value = value
+        prefs.edit().putInt(KEY_AUTO_LAUNCH_TARGET, value).apply()
+    }
+
+    private fun loadAutoLaunchTarget(): Int {
+        return prefs.getInt(KEY_AUTO_LAUNCH_TARGET, 0)
     }
 }

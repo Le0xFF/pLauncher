@@ -61,6 +61,10 @@
     <string name="settings_vibration_double">Double</string>
     <string name="settings_auto_close">Auto-close on launch</string>
     <string name="settings_auto_close_desc">Close pLauncher after successful app launch</string>
+    <string name="settings_auto_launch">Auto-launch on open</string>
+    <string name="settings_auto_launch_desc">Automatically launch the selected app when pLauncher opens</string>
+    <string name="appscreen_auto_launch">Set as auto-launch target</string>
+    <string name="appscreen_auto_launch_selected">Auto-launch target</string>
     <string name="settings_section_themes">Themes</string>
     <string name="settings_theme">Theme</string>
     <string name="settings_theme_desc">Appearance of the companion app</string>
