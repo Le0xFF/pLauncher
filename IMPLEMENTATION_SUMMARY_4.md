@@ -562,3 +562,254 @@ Settings screen "Watchapp settings" section (expanded):
 
 - Watch app: `pebble build` — compiles cleanly for `basalt` and `emery`
 - Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+---
+
+## #20 — Auto-Launch Feature
+
+### Overview
+
+Added an "Auto-launch" feature that allows the user to select, from the companion app, an app to automatically launch when the pLauncher watchapp opens. The feature is controlled by a switch in the "Watchapp settings" section of the companion app's Settings screen, and a radio-button indicator on each app row in the Apps screen. When enabled and the watchapp opens, the selected app is automatically launched without any user interaction on the watch.
+
+### Analysis
+
+- **Previous state**: The watchapp required the user to navigate to the desired app and press the Launch button. The companion app managed the app list and preferences (vibration, auto-close) but had no concept of auto-launch.
+- **Protocol**: Added packet type 15 (Auto-Launch Enabled) and packet type 16 (Auto-Launch Target), plus keys 13 and 14. Preferences are synchronized from phone to watch on connection and when changed.
+- **Watch persistence**: Auto-launch enabled flag and target index stored in Pebble's PersistentKeyStore (`persist_*` API), loaded on boot, defaulting to `false` (disabled) and `0` (first app).
+- **Auto-launch trigger**: When the watch receives the last chunk of the app list, it schedules a 500ms `AppTimer` before attempting to launch. This timer-based approach solves two problems: (1) the AppMessage outbox cannot be used inside `inbox_received_handler` (it returns `APP_MSG_BUSY`), so the launch must be deferred to the event loop; (2) the timer gives time for the prefs packets (types 15/16) to arrive, as BLE messages may arrive out of order. The companion app sends prefs BEFORE the app list, and the prefs handlers cancel and reschedule the timer if they arrive during the waiting window.
+- **Display optimization**: When the app list completes, if auto-launch is enabled and the target is valid, the display immediately shows the target app name instead of the first app, so the user sees the correct app rather than a brief flash of app #0 before the target.
+- **UI**: Radio-button indicator (outer ring + inner dot) on each app row. Switch in Settings screen. Target validation after list modifications (reorder, sort, remove, rename, picker).
+
+### Watch App (`pbw/`) — ~85 lines changed across 3 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `src/c/packets.h` | Added `#define PACKET_TYPE_AUTO_LAUNCH_PREF 15`, `#define PACKET_TYPE_AUTO_LAUNCH_TARGET 16`. Added `#define KEY_AUTO_LAUNCH_ENABLED 13`, `#define KEY_AUTO_LAUNCH_TARGET 14`. Added declarations for `load_auto_launch_pref()`, `packets_get_auto_launch_enabled()`, `packets_get_auto_launch_target()`. |
+| `src/c/packets.c` | Added `s_auto_launch_timer`, `s_auto_launch_pending`, `s_auto_launch_enabled`, `s_auto_launch_target` static variables. Added `PERSIST_KEY_AUTO_LAUNCH_ENABLED (0x03)` and `PERSIST_KEY_AUTO_LAUNCH_TARGET (0x04)`. Implemented save/load/get functions for both values. Implemented `try_auto_launch()`, `auto_launch_timer_handler()`, `schedule_auto_launch()`, `cancel_auto_launch()` for timer-based deferred launch. Added `handle_auto_launch_pref()` and `handle_auto_launch_target()` handlers with pending-timer cancellation and rescheduling. Modified `handle_app_list()` to set display to target index when auto-launch is enabled, and call `schedule_auto_launch()` on last chunk. Added switch cases for packet types 15/16 in `inbox_received_handler`. Added `cancel_auto_launch()` call in `response_timeout_handler()`. |
+| `src/c/pLauncher.c` | Added `load_auto_launch_pref()` call in `init()` after `load_auto_close_pref()`. |
+
+#### Key Implementation Details
+
+**Protocol constants** (`packets.h`):
+```c
+#define PACKET_TYPE_AUTO_LAUNCH_PREF 15
+#define PACKET_TYPE_AUTO_LAUNCH_TARGET 16
+#define KEY_AUTO_LAUNCH_ENABLED 13
+#define KEY_AUTO_LAUNCH_TARGET 14
+```
+
+**Persistence** (`packets.c`):
+```c
+static bool s_auto_launch_enabled = false;
+static uint8_t s_auto_launch_target = 0;
+#define PERSIST_KEY_AUTO_LAUNCH_ENABLED 0x03
+#define PERSIST_KEY_AUTO_LAUNCH_TARGET 0x04
+
+void load_auto_launch_pref(void) {
+    if (persist_exists(PERSIST_KEY_AUTO_LAUNCH_ENABLED))
+        s_auto_launch_enabled = (bool)persist_read_int(PERSIST_KEY_AUTO_LAUNCH_ENABLED);
+    else
+        s_auto_launch_enabled = false;
+    if (persist_exists(PERSIST_KEY_AUTO_LAUNCH_TARGET))
+        s_auto_launch_target = (uint8_t)persist_read_int(PERSIST_KEY_AUTO_LAUNCH_TARGET);
+    else
+        s_auto_launch_target = 0;
+}
+```
+
+**Timer-based deferred launch** (`packets.c`):
+The core of the auto-launch mechanism. `try_auto_launch()` calls `send_launch_app()` which uses `app_message_outbox_begin()` — this **cannot** be called from inside `inbox_received_handler` because the outbox is locked during inbox processing (returns `APP_MSG_BUSY`). The solution is to always defer the launch through an `AppTimer`:
+
+```c
+static void try_auto_launch(void) {
+    if (s_auto_launch_enabled && s_auto_launch_target < (uint8_t)app_list_get_count()) {
+        app_list_set_current_index(s_auto_launch_target);
+        window_main_update_display();
+        send_launch_app(s_auto_launch_target);
+    }
+    s_auto_launch_pending = false;
+}
+
+static void auto_launch_timer_handler(void* context) {
+    s_auto_launch_timer = NULL;
+    if (s_auto_launch_pending) {
+        try_auto_launch();
+    }
+}
+
+static void schedule_auto_launch(void) {
+    if (s_auto_launch_timer) {
+        app_timer_cancel(s_auto_launch_timer);
+        s_auto_launch_timer = NULL;
+    }
+    s_auto_launch_pending = true;
+    s_auto_launch_timer = app_timer_register(500, auto_launch_timer_handler, NULL);
+}
+```
+
+The 500ms delay serves dual purpose: (1) it defers the launch to the event loop where the outbox is available, and (2) it gives time for the prefs packets to arrive over BLE, as messages may arrive out of order.
+
+**Prefs arrive during pending window** (`packets.c`):
+When `handle_auto_launch_pref()` or `handle_auto_launch_target()` receives a prefs packet while the timer is pending, it cancels the timer and reschedules it. This way, if both prefs arrive early, the timer fires with all data ready. If only one arrives, the timer keeps waiting for the other:
+
+```c
+static void handle_auto_launch_pref(DictionaryIterator* iter) {
+    Tuple* t = dict_find(iter, KEY_AUTO_LAUNCH_ENABLED);
+    if (t) {
+        bool enabled = (t->value->uint8 == 1);
+        save_auto_launch_pref(enabled);
+    }
+    if (s_auto_launch_pending) {
+        cancel_auto_launch();
+        schedule_auto_launch();
+    }
+}
+```
+
+**Display optimization** (`packets.c`):
+When the last app list chunk arrives, the display is set to the auto-launch target if enabled, rather than always resetting to index 0:
+
+```c
+if (is_last) {
+    s_loading = false;
+    if (s_auto_launch_enabled && s_auto_launch_target < (uint8_t)app_list_get_count()) {
+        app_list_set_current_index(s_auto_launch_target);
+    } else {
+        app_list_reset();
+    }
+    window_main_update_display();
+    schedule_auto_launch();
+}
+```
+
+This avoids the visual flicker of briefly showing the first app before the auto-launch timer fires and switches to the target.
+
+**Companion app sends prefs before app list** (`PebbleListenerService.kt`):
+In `handleWatchWelcome()`, the prefs (vibration, auto-close, auto-launch enabled, auto-launch target) are sent BEFORE the app list. This maximizes the chance that prefs arrive before the last chunk, allowing the timer to fire with correct data.
+
+### Android Companion App (`apk/`) — ~80 lines changed across 6 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `res/values/strings.xml` | Added `settings_auto_launch` ("Auto-launch on open"), `settings_auto_launch_desc` ("Automatically launch the selected app when pLauncher opens"), `appscreen_auto_launch` ("Set as auto-launch target"), `appscreen_auto_launch_selected` ("Auto-launch target"). |
+| `data/AppDataStore.kt` | Added `KEY_AUTO_LAUNCH`, `KEY_AUTO_LAUNCH_TARGET`. Added `_autoLaunchEnabled` and `_autoLaunchTarget` StateFlow, plus `getAutoLaunchEnabled()`, `setAutoLaunchEnabled()`, `loadAutoLaunchEnabled()` (default `false`), `getAutoLaunchTarget()`, `setAutoLaunchTarget()`, `loadAutoLaunchTarget()` (default `0`). |
+| `MainActivity.kt` | Added `_autoLaunchEnabled` and `_autoLaunchTarget` StateFlow to `AppViewModel`, `setAutoLaunchEnabled()`, `setAutoLaunchTarget()`. Load from DataStore in `LaunchedEffect`. Pass `autoLaunchEnabled`, `autoLaunchTarget`, `onAutoLaunchTargetChange` to `AppScreen`. Pass `autoLaunch` and `onAutoLaunchChange` to `SettingsScreen`. Callbacks save to DataStore and send to watch via `senderHelper`. Added `validateAutoLaunchTarget()` helper called after every list modification (reorder, sort, remove, rename, picker confirm) to reset target to 0 if it exceeds the new list size. |
+| `ui/SettingsScreen.kt` | Added `autoLaunch` and `onAutoLaunchChange` parameters. Added `HorizontalDivider()` + Row with Column (label + desc) and Switch below the autoClose switch in the "Watchapp settings" section. |
+| `PebbleSenderHelper.kt` | Added `sendAutoLaunchPref(enabled: UInt)` (packet type 15, key 13) and `sendAutoLaunchTarget(index: UInt)` (packet type 16, key 14). |
+| `PebbleListenerService.kt` | Modified `handleWatchWelcome()` to send prefs (vibration, auto-close, auto-launch enabled, auto-launch target) BEFORE the app list. |
+
+#### Key Implementation Details
+
+**Radio-button indicator** (`AppScreen.kt`):
+Each app row has a Canvas-drawn radio-button indicator between the drag handle and the Edit/Delete buttons. The indicator draws an outer ring (`Stroke`) and, when the app is the selected target, a small filled dot inside. When `autoLaunchEnabled` is `false`, all indicators are drawn with `alpha = 0.3f` for a dimmed appearance:
+
+```kotlin
+Canvas(modifier = Modifier.size(28.dp)) {
+    val radius = size.width / 2f
+    val strokeWidth = 2.dp.toPx()
+    val dotRadius = (radius - strokeWidth) * 0.6f
+    drawCircle(
+        color = ringColor.copy(alpha = circleAlpha),
+        radius = radius - strokeWidth / 2f,
+        style = Stroke(strokeWidth)
+    )
+    if (isAutoLaunchTarget) {
+        drawCircle(
+            color = ringColor.copy(alpha = circleAlpha),
+            radius = dotRadius
+        )
+    }
+}
+```
+
+The `ringColor` is `primary` when the app is the target, `onSurfaceVariant` otherwise. `circleAlpha` is `1f` when auto-launch is enabled, `0.3f` when disabled.
+
+**Target validation** (`MainActivity.kt`):
+After any list modification, `validateAutoLaunchTarget()` checks if the saved target index is still valid. If the target exceeds the new list size, it is reset to `0` and synced to DataStore and watch:
+
+```kotlin
+private fun validateAutoLaunchTarget(apps: List<LaunchApp>) {
+    val target = viewModel.autoLaunchTarget.value
+    if (target >= apps.size && apps.isNotEmpty()) {
+        viewModel.setAutoLaunchTarget(0)
+        appDataStore.setAutoLaunchTarget(0)
+        coroutineScope.launch {
+            senderHelper.sendAutoLaunchTarget(0u)
+        }
+    }
+}
+```
+
+Called after: reorder, sort, remove confirm, rename save/reset, picker confirm.
+
+**Prefs before app list** (`PebbleListenerService.kt`):
+```kotlin
+helper.sendVibrationPref(pref.toUInt())
+helper.sendAutoClosePref(if (autoClose) 1u else 0u)
+helper.sendAutoLaunchPref(if (autoLaunch) 1u else 0u)
+helper.sendAutoLaunchTarget(autoLaunchTarget.toUInt())
+val apps = dataStore?.apps?.value ?: emptyList()
+helper.sendAppList(apps, watch)
+```
+
+#### Layout
+
+Settings screen "Watchapp settings" section (expanded):
+```
+┌─────────────────────────────────┐
+│ ▾ Watchapp settings             │
+│   Vibration on launch           │
+│   Haptic feedback...   [None ▼] │
+│   ─────────────────────         │
+│   Auto-close on launch    [●]   │
+│   Close pLauncher after         │
+│   successful app launch         │
+│   ─────────────────────         │
+│   Auto-launch on open     [○]   │
+│   Automatically launch the      │
+│   selected app when pLauncher   │
+│   opens                         │
+└─────────────────────────────────┘
+```
+
+Apps screen row with auto-launch target selected:
+```
+┌─────────────────────────────────────────────┐
+│ [::] [icon] WhatsApp  (○●) [✎] [🗑]       │  ← target (filled dot)
+│ [::] [icon] Spotify   (○ ) [✎] [🗑]       │  ← not target (empty ring)
+└─────────────────────────────────────────────┘
+```
+
+### Protocol Documentation — ~5 lines changed
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `COMMUNICATION_PROTOCOL.md` | Added key `13` (UInt8, Phone → Watch, Auto-launch enabled) and key `14` (UInt8, Phone → Watch, Auto-launch target index). Added packet type `15` (Auto-Launch Enabled — keys: `13` (enabled uint8)) and packet type `16` (Auto-Launch Target — keys: `14` (target index uint8, 0-based)). |
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 3 | ~85 (constants, persistence, timer helpers, handlers, display optimization, switch cases) |
+| Android App (Kotlin) | 6 | ~80 (strings, data store, view model, UI radio buttons + switch, sender, service, target validation) |
+| Documentation | 1 | ~5 (key table, packet types) |
+| **Total** | **10** | **~170** |
+
+#### Build Status
+
+- Watch app: `pebble build` — compiles cleanly for `basalt` and `emery`
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+#### Known Issues Resolved
+
+**Outbox busy during inbox handler**: The initial implementation called `send_launch_app()` directly from `handle_app_list()` inside `inbox_received_handler`. This failed silently because `app_message_outbox_begin()` returns `APP_MSG_BUSY` when the inbox is being processed. Fixed by deferring all launches through a 500ms `AppTimer` that fires on the event loop, outside the inbox handler context.
+
+**BLE message ordering**: BLE messages may arrive out of order. The companion app sends prefs before the app list, but BLE delivery is not guaranteed to preserve order. The 500ms timer on the watch gives the prefs time to arrive. If prefs arrive during the pending window, the timer is cancelled and rescheduled, ensuring the launch always has correct data.
+
+**Display flicker**: The initial implementation showed the first app (index 0) briefly before the auto-launch timer fired and switched to the target. Fixed by setting the display to the target index immediately when the last chunk arrives (if auto-launch is enabled and target is valid), then the timer handles the actual launch.
