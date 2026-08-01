@@ -18,6 +18,8 @@ Watch and companion app communicate via Pebble AppMessage using numeric dictiona
 | 10  | UInt8  | Phone → Watch   | Launch confirm flag (1 = success, 0 = failure) |
 | 11  | UInt8  | Phone → Watch   | Vibration preference (0 = None, 1 = Short, 2 = Long, 3 = Double) |
 | 12  | UInt8  | Phone → Watch   | Auto-close preference (1 = enabled, 0 = disabled) |
+| 13  | UInt8  | Phone → Watch   | Auto-launch enabled (1 = enabled, 0 = disabled)   |
+| 14  | UInt8  | Phone → Watch   | Auto-launch target index (0-based)                |
 
 ## Packet Types
 
@@ -31,6 +33,8 @@ Watch and companion app communicate via Pebble AppMessage using numeric dictiona
 - `12`: Launch Confirm — keys: `10` (confirm flag uint8, 1 = success, 0 = failure)
 - `13`: Vibration Preference — keys: `11` (vibration pref uint8, 0 = None, 1 = Short, 2 = Long, 3 = Double)
 - `14`: Auto-Close Preference — keys: `12` (auto-close flag uint8, 1 = enabled, 0 = disabled)
+- `15`: Auto-Launch Enabled — keys: `13` (auto-launch enabled uint8, 1 = enabled, 0 = disabled)
+- `16`: Auto-Launch Target — keys: `14` (auto-launch target index uint8, 0-based)
 
 ## Protocol Version
 
