@@ -60,9 +60,9 @@
     <string name="settings_vibration_long">Long</string>
     <string name="settings_vibration_double">Double</string>
     <string name="settings_auto_close">Auto-close on launch</string>
-    <string name="settings_auto_close_desc">Close pLauncher after successful app launch</string>
+    <string name="settings_auto_close_desc">Close watchapp after successful app launch</string>
     <string name="settings_auto_launch">Auto-launch on open</string>
-    <string name="settings_auto_launch_desc">Automatically launch the selected app when pLauncher opens</string>
+    <string name="settings_auto_launch_desc">Auto-launch selected app on watchapp open</string>
     <string name="appscreen_auto_launch">Set as auto-launch target</string>
     <string name="appscreen_auto_launch_selected">Auto-launch target</string>
     <string name="settings_section_themes">Themes</string>
@@ -97,4 +97,5 @@
     <string name="appscreen_limit_reached">Maximum of 20 apps reached</string>
     <string name="appscreen_app_count">App count</string>
     <string name="picker_limit_reached">Maximum of 20 apps reached</string>
+    <string name="rename_char_count">%d/32</string>
 </resources>
