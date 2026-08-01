@@ -390,3 +390,129 @@ val iconBitmap = remember(app.packageName) {
 **Picker bitmap recomputation**: Every recomposition reconverted all visible icons. Fixed with `remember` caching.
 
 **Per-item recomposition cascade**: `MaterialTheme` and `LocalContext` reads inside every item caused all visible items to recompose together on theme/context changes. Fixed by hoisting reads and extracting `AppListItem` with parameterized recomposition scoping.
+
+---
+
+## #23 — Save Logs Debug Button
+
+### Overview
+
+Added a "Save Logs" button in the Debug section of the companion app's Settings screen. Pressing the button saves the current session's in-memory log buffer to a `.txt` file and shares it via Android's share intent, following the same `FileProvider` pattern as the YAML export. The log buffer (`AppLogBuffer`) collects significant events throughout the app lifecycle, including app startup, Pebble connection/disconnection, launch requests, import/export operations, and crashes.
+
+### Analysis
+
+- **Previous state**: The companion app had no internal logging mechanism. The Debug section only contained a crash reports switch and a test crash button. Debugging issues required relying solely on `adb logcat`, which is impractical for field testing.
+- **Log buffer**: Created `AppLogBuffer` as a Kotlin `object` (singleton) with a 500-entry FIFO queue backed by `CopyOnWriteArrayList` with synchronized access for thread safety. Each entry records timestamp (formatted `yyyy-MM-dd HH:mm:ss.SSS`), level (`INFO`, `WARN`, `ERROR`, `DEBUG`), tag (component name), and message. Logs are volatile — not persisted between sessions.
+- **Export**: Writes `plauncher_logs.txt` to `cacheDir/exports/` (reusing the existing FileProvider `<cache-path>`), and shares via `Intent.ACTION_SEND` with `text/plain` MIME type. Empty buffer shows a Toast. Errors during save show a Toast.
+- **Instrumentation**: Key points across `MainActivity`, `PebbleListenerService`, `CrashApplication`, and `LaunchActivity` are instrumented with `AppLogBuffer.info/warn/error/debug` calls using descriptive tags.
+
+### Android Companion App (`apk/`) — ~100 lines changed across 6 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `app/src/main/java/com/le0xff/plauncher/data/AppLogBuffer.kt` (new) | Created singleton `AppLogBuffer` with `LogEntry` data class, 500-entry FIFO buffer (`CopyOnWriteArrayList` + `synchronized`), `info/warn/error/debug` methods, `getEntries()`, `getLogsAsString()` (formatted as `[timestamp] LEVEL/TAG: message`), and `clear()`. |
+| `app/src/main/res/values/strings.xml` | Added 6 new strings: `button_save_logs` ("Save"), `settings_save_logs` ("Save logs"), `settings_save_logs_desc` ("Save current session logs to a text file"), `logs_saved_success` ("Logs saved successfully"), `logs_saved_error` ("Failed to save logs"), `logs_empty` ("No logs available"). |
+| `ui/SettingsScreen.kt` | Added `onSaveLogsClick` parameter (default `{}`). Added "Save logs" row in Debug accordion between crash reports switch and crash button, with title, description, and "Save" button. |
+| `MainActivity.kt` | Added import for `AppLogBuffer`. Added `onSaveLogsClick` lambda that reads buffer, checks empty, writes `plauncher_logs.txt` to `cacheDir/exports/`, obtains URI via `FileProvider`, and shares via `Intent.ACTION_SEND`. Passed `onSaveLogsClick` to `SettingsScreen`. Added log calls: `onCreate` (app started), `onResume` (activity resumed), export initiated, import initiated, import parsed/applied, save logs initiated. |
+| `PebbleListenerService.kt` | Added import for `AppLogBuffer`. Added log calls: `onCreate` (service created), `onDestroy` (service destroyed), `handleWatchWelcome` (watch connected), `onAppClosed` (watch disconnected), `handleLaunchApp` (launch request for index), `onMessageReceived` catch block (error processing message), unknown packet type. |
+| `CrashApplication.kt` | Added import for `AppLogBuffer`. Added log call in uncaught exception handler (exception type and message). |
+| `LaunchActivity.kt` | Added import for `AppLogBuffer`. Added log calls: missing package name (warn), launching package, launch success, launch failed (error), no launch intent (warn). |
+
+#### Key Implementation Details
+
+**AppLogBuffer singleton** (`data/AppLogBuffer.kt`):
+```kotlin
+object AppLogBuffer {
+    private val _entries = CopyOnWriteArrayList<LogEntry>()
+    private const val MAX_ENTRIES = 500
+
+    fun info(tag: String, message: String) = add("INFO", tag, message)
+    fun warn(tag: String, message: String) = add("WARN", tag, message)
+    fun error(tag: String, message: String) = add("ERROR", tag, message)
+    fun debug(tag: String, message: String) = add("DEBUG", tag, message)
+
+    fun getLogsAsString(): String {
+        return _entries.joinToString("\n") { entry ->
+            "[${entry.timestamp}] ${entry.level}/${entry.tag}: ${entry.message}"
+        }
+    }
+}
+```
+Thread-safe via `CopyOnWriteArrayList` + `synchronized` on mutable operations. FIFO eviction at 500 entries. Output format: `[2026-08-01 12:00:00.000] INFO/MainActivity: App started`.
+
+**Save logs callback** (`MainActivity.kt`):
+```kotlin
+val onSaveLogsClick: () -> Unit = onSaveLogs@{
+    val entries = AppLogBuffer.getEntries()
+    if (entries.isEmpty()) {
+        Toast.makeText(context, R.string.logs_empty, Toast.LENGTH_SHORT).show()
+        return@onSaveLogs
+    }
+    val logContent = AppLogBuffer.getLogsAsString()
+    val exportsDir = File(context.cacheDir, "exports")
+    if (!exportsDir.exists()) exportsDir.mkdirs()
+    val file = File(exportsDir, "plauncher_logs.txt")
+    file.writeText(logContent)
+    val uri = FileProvider.getUriForFile(
+        context, "com.le0xff.plauncher.fileprovider", file
+    )
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    startActivity(Intent.createChooser(shareIntent, getString(R.string.button_save_logs)))
+}
+```
+Follows the exact same pattern as `onExportClick`: write to `cacheDir/exports/`, get URI via `FileProvider`, share with `ACTION_SEND`. Reuses existing `file_paths.xml` `<cache-path>` configuration.
+
+**Instrumentation points**:
+| Component | Events Logged |
+|---|---|
+| `MainActivity` | App started, activity resumed, export initiated, import initiated, import parsed (app count), import applied (app count), save logs initiated |
+| `PebbleListenerService` | Service created/destroyed, watch connected/disconnected, launch request (index), unknown packet type, message processing error |
+| `CrashApplication` | Uncaught exception (type + message) |
+| `LaunchActivity` | Missing package name, launching package, launch success, launch failed, no launch intent |
+
+**Debug section layout**:
+```
+┌─────────────────────────────────┐
+│ ▾ Debug                         │
+│   Generate crash reports [switch]│
+│   ──────────────────────────── │
+│   Save logs                     │
+│   Save current session logs...  │
+│                        [Save]   │
+│   ──────────────────────────── │
+│   Crash the application         │
+│   Triggers a test crash...      │
+│                    [Crash]      │
+└─────────────────────────────────┘
+```
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 0 | 0 (unchanged) |
+| Android App (Kotlin) | 6 | ~100 (AppLogBuffer ~55 new lines, strings 6 lines, SettingsScreen ~18 lines, MainActivity ~20 lines, PebbleListenerService ~8 lines, CrashApplication ~2 lines, LaunchActivity ~5 lines) |
+| **Total** | **6** | **~100** |
+
+#### Build Status
+
+- Watch app: `pebble build` — unchanged
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+#### Design Decisions
+
+**Volatile buffer**: Logs are in-memory only, not persisted to storage. This avoids permission complexity and keeps logs relevant to the current session (the typical debugging scenario).
+
+**500-entry cap**: Balances between capturing enough history for debugging and avoiding unbounded memory growth. FIFO eviction ensures the most recent entries are always available.
+
+**Thread safety**: The buffer is accessed from both the main thread (Activities) and background threads (Service message handling). `CopyOnWriteArrayList` + `synchronized` on mutations ensures safe concurrent access without external coordination.
+
+**Reused FileProvider**: The existing `file_paths.xml` already defines `<cache-path name="exports" path="exports/">`, so no manifest or XML changes were needed.
+
+**No-op safe**: `AppLogBuffer` calls never throw exceptions, so instrumentation cannot break existing flows.
