@@ -259,3 +259,134 @@ Import warnings dialog:
 **Hardcoded warning strings**: The initial implementation formatted warning messages in `YamlExportImport.kt` with hardcoded English strings. Fixed by returning structured data (`ImportResult` with separate fields for each warning type) and formatting all messages in `MainActivity.kt` using localized string resources.
 
 **Split Toast/dialog for warnings**: The initial implementation showed warnings as a mix of Toast and AlertDialog depending on count. Fixed by always showing a single AlertDialog with all warnings after import confirmation, with structured layout (emoji title, dividers, bold labels, monospace packages).
+
+---
+
+## #22 — APK Startup Performance and Scroll Optimization
+
+### Overview
+
+Eliminated the startup flash (light theme and empty list briefly visible before data loads), removed O(n²) complexity from the app list scroll, replaced heavy `Canvas` rendering with lightweight composables, cached icon bitmaps in the app picker dialog, and further optimized the `LazyColumn` to prevent per-item recompositions by hoisting shared state and extracting item content into a dedicated composable.
+
+### Analysis
+
+- **Startup flash**: The ViewModel was initialized with default values (`AppTheme.Light`, `emptyList()`), and Compose rendered the first frame with these defaults before `LaunchedEffect(Unit)` loaded persisted data from `AppDataStore`. Fixed by loading data synchronously in `onCreate()` before `setContent`, since `AppDataStore` uses `SharedPreferences` with synchronous reads populated in the constructor.
+- **Scroll stutter — O(n²) `indexOf()`**: Two calls to `indexOf()` were executed per item per composition: `filtered.indexOf(app)` for divider logic and `apps.indexOf(app)` for auto-launch index. With up to 20 items, this produced ~400 operations per recomposition. Fixed by switching to `itemsIndexed()` (O(1) index from parameter) and building a `Map<String, Int>` (packageName → index) with `remember` for O(1) lookups.
+- **Scroll stutter — Canvas per item**: Each list item contained a `Canvas` that drew circles for the auto-launch indicator. `Canvas` has higher composition and rendering cost than standard composables. Fixed by replacing with `Box` + `border()` for the outer ring and `Box` + `background()` for the inner dot.
+- **AppPickerDialog — uncached bitmap conversion**: Every row converted `Drawable → Bitmap` on every recomposition. Fixed by wrapping in `remember(app.packageName)` to cache bitmaps per package.
+- **Per-item recomposition — hoisted state**: `LocalContext.current`, `MaterialTheme.colorScheme`, and `MaterialTheme.typography` were read inside every item's lambda. Each read forces per-item recomposition when the source changes. Fixed by hoisting these reads to `AppScreen` and passing them as parameters to an extracted `AppListItem` composable. Additionally, icon bitmaps are cached in a persistent `mutableMapOf` remembered against `context`, so bitmaps survive viewport recycling (unlike per-item `remember` which loses cache when items scroll off-screen).
+
+### Android Companion App (`apk/`) — ~50 lines changed across 4 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `MainActivity.kt` | Moved data loading from `LaunchedEffect(Unit)` inside `setContent` to `onCreate()` before `setContent`. Added 9 `viewModel.set*()` calls and `viewModel.setConnectionStatus()` using `getString(R.string.status_disconnected)` (Activity method, not composable). Removed `LaunchedEffect(Unit)` block and `dataStore` remember reference used only for initial load. |
+| `ui/AppScreen.kt` | Added imports: `android.content.Context`, `androidx.compose.foundation.lazy.LazyItemScope`, `androidx.compose.foundation.border`, `androidx.compose.ui.graphics.ImageBitmap`, `sh.calvin.reorderable.ReorderableCollectionItemScope`. Removed imports: `androidx.compose.foundation.Canvas`, `androidx.compose.ui.graphics.drawscope.Stroke`, `androidx.compose.foundation.lazy.items`. Hoisted `colorScheme`, `typography`, `context`, `appIndexMap`, and `iconCache` outside `LazyColumn`. Replaced `items(filtered, ...)` with `itemsIndexed(filtered, ...)`. Replaced `filtered.indexOf(app)` with `index` parameter. Replaced `apps.indexOf(app)` with `appIndexMap[app.packageName]`. Replaced `Canvas` circle drawing with `Box` + `border()`/`background()`. Extracted item content into new `AppListItem` composable receiving hoisted parameters. Icon bitmaps cached in persistent `mutableMapOf` via `getOrPut`. |
+| `ui/AppPickerDialog.kt` | Wrapped `Drawable → Bitmap` conversion in `remember(app.packageName)` to cache bitmaps per package, preventing recomputation on every recomposition. |
+| `data/AppDataStore.kt` | Unchanged (already synchronous; methods used for pre-loading: `apps.value`, `getShowSystemApps()`, `getGenerateCrashReports()`, `getAppTheme()`, `getVibrationPref()`, `getAutoClose()`, `getAutoLaunchEnabled()`, `getAutoLaunchTarget()`). |
+
+#### Key Implementation Details
+
+**Startup data loading** (`MainActivity.kt`):
+```kotlin
+// In onCreate(), BEFORE setContent:
+viewModel.setApps(appDataStore.apps.value)
+viewModel.setShowSystemApps(appDataStore.getShowSystemApps())
+viewModel.setGenerateCrashReports(appDataStore.getGenerateCrashReports())
+viewModel.setAppTheme(appDataStore.getAppTheme())
+viewModel.setVibrationPref(appDataStore.getVibrationPref())
+viewModel.setAutoClose(appDataStore.getAutoClose())
+viewModel.setAutoLaunchEnabled(appDataStore.getAutoLaunchEnabled())
+viewModel.setAutoLaunchTarget(appDataStore.getAutoLaunchTarget())
+viewModel.setConnectionStatus(getString(R.string.status_disconnected))
+```
+Uses `getString()` (Activity method) instead of `stringResource()` (composable) since we're outside Compose context.
+
+**O(n²) elimination** (`ui/AppScreen.kt`):
+```kotlin
+// itemsIndexed provides index directly (O(1))
+itemsIndexed(filtered, key = { _, app -> app.packageName }) { index, app ->
+    if (index > 0) { ... } // was: filtered.indexOf(app) > 0
+}
+
+// Map lookup for auto-launch index (O(1))
+val appIndexMap = remember(apps) {
+    apps.mapIndexed { idx, app -> app.packageName to idx }.toMap()
+}
+val appIndex = appIndexMap[app.packageName] ?: -1 // was: apps.indexOf(app)
+```
+
+**Canvas replacement** (`ui/AppScreen.kt`):
+```kotlin
+// Was: Canvas with drawCircle(Stroke) + drawCircle(filled)
+Box(
+    modifier = Modifier.size(28.dp).border(2.dp, ringColor.copy(alpha = circleAlpha), CircleShape),
+    contentAlignment = Alignment.Center
+) {
+    if (isAutoLaunchTarget) {
+        Box(modifier = Modifier.size(12.dp).background(ringColor.copy(alpha = circleAlpha), CircleShape))
+    }
+}
+```
+
+**Hoisted state and extracted composable** (`ui/AppScreen.kt`):
+```kotlin
+// In AppScreen, OUTSIDE LazyColumn:
+val colorScheme = MaterialTheme.colorScheme
+val typography = MaterialTheme.typography
+val context = LocalContext.current
+val iconCache = remember(context) { mutableMapOf<String, ImageBitmap?>() }
+
+// Inside itemsIndexed:
+val iconBitmap = remember(app.packageName) {
+    iconCache.getOrPut(app.packageName) { /* load icon */ }
+}
+
+AppListItem(
+    app = app, iconBitmap = iconBitmap, isDragging = isDragging,
+    colorScheme = colorScheme, typography = typography, ...
+)
+```
+The `AppListItem` composable receives all shared values as parameters, scoping recomposition to only items whose parameters changed. The `iconCache` persists across viewport recycling.
+
+**Picker bitmap caching** (`ui/AppPickerDialog.kt`):
+```kotlin
+val iconBitmap = remember(app.packageName) {
+    app.icon?.toBitmap(48, 48)?.asImageBitmap()
+}
+```
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 0 | 0 (unchanged) |
+| Android App (Kotlin) | 4 | ~50 (MainActivity ~15 removed/added, AppScreen ~30 restructured, AppPickerDialog ~5 changed) |
+| **Total** | **4** | **~50** |
+
+#### Build Status
+
+- Watch app: `pebble build` — unchanged
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+#### Performance Impact
+
+- **Startup flash**: Eliminated. First frame renders with correct theme and populated list.
+- **Scroll complexity**: Reduced from O(n²) to O(n) per recomposition via `itemsIndexed()` and `Map` lookups.
+- **Per-item composition cost**: Reduced by replacing `Canvas` with `Box`/`border`/`background`, hoisting `MaterialTheme`/`LocalContext` reads, and extracting `AppListItem` composable.
+- **Picker performance**: Icon bitmaps cached per package, eliminating redundant `Drawable → Bitmap` conversions during scroll and search.
+- **Icon cache persistence**: Bitmaps cached in a persistent `mutableMapOf` survive viewport recycling, unlike per-item `remember` which loses cache when items scroll off-screen.
+
+#### Known Issues Resolved
+
+**Startup flash**: The first Compose frame used ViewModel defaults. Fixed by loading persisted data in `onCreate()` before `setContent`.
+
+**Scroll stutter from O(n²)**: Two `indexOf()` calls per item per composition. Fixed with `itemsIndexed()` and `Map` lookups.
+
+**Canvas overhead**: `Canvas` per item caused composition lag on scroll. Fixed with lightweight `Box` composables.
+
+**Picker bitmap recomputation**: Every recomposition reconverted all visible icons. Fixed with `remember` caching.
+
+**Per-item recomposition cascade**: `MaterialTheme` and `LocalContext` reads inside every item caused all visible items to recompose together on theme/context changes. Fixed by hoisting reads and extracting `AppListItem` with parameterized recomposition scoping.
