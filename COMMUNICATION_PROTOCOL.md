@@ -20,16 +20,18 @@ Watch and companion app communicate via Pebble AppMessage using numeric dictiona
 | 12  | UInt8  | Phone → Watch   | Auto-close preference (1 = enabled, 0 = disabled) |
 | 13  | UInt8  | Phone → Watch   | Auto-launch enabled (1 = enabled, 0 = disabled)   |
 | 14  | UInt8  | Phone → Watch   | Auto-launch target index (0-based)                |
+| 15  | UInt8  | Watch → Phone   | Display type (0 = B/W, 1 = Color) — sent in Watch Welcome |
+| 16  | Data   | Phone → Watch   | App icon binary data (32×32 pixels). Format depends on KEY_DISPLAY_TYPE: Color = 1,024 bytes (GColor8, 1 byte/pixel, 0bAARRGGBB), B/W = 128 bytes (1-bit, 4-byte row padding, MSB first) |
 
 ## Packet Types
 
 ### Watch → Phone
-- `0`: Watch Welcome — keys: `1` (protocol version uint16)
+- `0`: Watch Welcome — keys: `1` (protocol version uint16), `15` (display type uint8: 0=B/W, 1=Color)
 - `1`: Launch App — keys: `2` (app index uint8)
 
 ### Phone → Watch
 - `10`: Phone Welcome — keys: `1` (protocol version uint16)
-- `11`: App List — keys: `3` (count), then pairs of `4`/`5` per app
+- `11`: App List — keys: `3` (count), then per app: `4` (name), `5` (package), `16` (icon data, optional)
 - `12`: Launch Confirm — keys: `10` (confirm flag uint8, 1 = success, 0 = failure)
 - `13`: Vibration Preference — keys: `11` (vibration pref uint8, 0 = None, 1 = Short, 2 = Long, 3 = Double)
 - `14`: Auto-Close Preference — keys: `12` (auto-close flag uint8, 1 = enabled, 0 = disabled)
@@ -52,3 +54,17 @@ If the app list exceeds AppMessage size limits (~1400 bytes), send multiple pack
 ## Settings
 
 No settings sync from watch to phone. The watch only launches apps. Settings (e.g., "show system apps") are managed entirely in the Android companion app. The vibration preference and auto-close preference are synchronized from the phone to the watch on connection and when changed.
+
+## Icon Formats
+
+The phone stores both formats of every app icon and sends the one matching the watch's display type (from key `15`).
+
+### Color (GColor8)
+- 32×32 pixels, row-major, 1 byte/pixel = **1,024 bytes**
+- Each byte: `0bAARRGGBB` (AA=alpha 2-bit, RR=red 2-bit, GG=green 2-bit, BB=blue 2-bit)
+- Alpha: 3 = opaque, 0 = transparent
+
+### B/W (1-bit)
+- 32×32 pixels, row-major, 1 bit/pixel (MSB first) = **128 bytes**
+- Each row padded to 4 bytes (32-bit alignment): 4 bytes data, no extra padding
+- Bit 1 = white, 0 = black
