@@ -77,7 +77,8 @@ fun AppScreen(
     }
     val iconCache = remember(context) { mutableMapOf<String, ImageBitmap?>() }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -186,6 +187,7 @@ fun AppScreen(
                             typography = typography
                         )
                     }
+                    }
                 }
             }
         }
@@ -193,7 +195,7 @@ fun AppScreen(
         FloatingActionButton(
             onClick = onAddApp,
             modifier = Modifier
-                .align(Alignment.End)
+                .align(Alignment.BottomEnd)
                 .padding(16.dp)
                 .widthIn(min = 100.dp)
         ) {
