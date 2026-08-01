@@ -12,6 +12,7 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.le0xff.plauncher.R
 import com.le0xff.plauncher.data.AppDataStore
+import com.le0xff.plauncher.data.AppLogBuffer
 import com.le0xff.plauncher.model.LaunchApp
 import io.rebble.pebblekit2.client.BasePebbleListenerService
 import io.rebble.pebblekit2.common.model.PebbleDictionary
@@ -62,6 +63,7 @@ class PebbleListenerService : BasePebbleListenerService() {
 
     override fun onCreate() {
         super.onCreate()
+        AppLogBuffer.info("PebbleService", "Service created")
         senderHelper = PebbleSenderHelper(applicationContext)
         dataStore = AppDataStore(applicationContext)
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -94,6 +96,7 @@ class PebbleListenerService : BasePebbleListenerService() {
     }
 
     override fun onDestroy() {
+        AppLogBuffer.info("PebbleService", "Service destroyed")
         try {
             unregisterReceiver(updateReceiver)
         } catch (e: IllegalArgumentException) {
@@ -134,14 +137,21 @@ class PebbleListenerService : BasePebbleListenerService() {
             when (packetType) {
             0 -> handleWatchWelcome(watch)
             1 -> handleLaunchApp(data, watch)
-            else -> ReceiveResult.Nack
+            else -> {
+                AppLogBuffer.error("PebbleService", "Unknown packet type: $packetType")
+                ReceiveResult.Nack
             }
+            }
+        } catch (e: Exception) {
+            AppLogBuffer.error("PebbleService", "Error processing message: ${e.message}")
+            ReceiveResult.Nack
         } finally {
             wakeLock?.let { if (it.isHeld) it.release() }
         }
     }
 
     private suspend fun handleWatchWelcome(watch: WatchIdentifier): ReceiveResult {
+        AppLogBuffer.info("PebbleService", "Watch connected: $watch")
         senderHelper?.let { helper ->
             helper.sendWelcome(watch)
             dataStore?.reloadApps()
@@ -167,6 +177,7 @@ class PebbleListenerService : BasePebbleListenerService() {
             is PebbleDictionaryItem.Int32 -> indexItem.value
             else -> return ReceiveResult.Nack
         }
+        AppLogBuffer.info("PebbleService", "Launch request for index: $index")
 
         dataStore?.reloadApps()
         val apps = dataStore?.apps?.value ?: emptyList()
@@ -188,6 +199,7 @@ class PebbleListenerService : BasePebbleListenerService() {
     }
 
     override fun onAppClosed(watchappUUID: UUID, watch: WatchIdentifier) {
+        AppLogBuffer.info("PebbleService", "Watch disconnected")
         updateNotification(getString(R.string.notif_disconnected))
     }
 
