@@ -29,6 +29,8 @@
 #define KEY_AUTO_CLOSE 12
 #define KEY_AUTO_LAUNCH_ENABLED 13
 #define KEY_AUTO_LAUNCH_TARGET 14
+#define KEY_DISPLAY_TYPE 15
+#define KEY_APP_ICON 16
 
 // Vibration preference values
 #define VIBE_NONE 0

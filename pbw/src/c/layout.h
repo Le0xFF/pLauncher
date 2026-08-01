@@ -21,4 +21,8 @@
 // Number of vertical zones for labels (h / LAYOUT_LABEL_ZONES)
 #define LAYOUT_LABEL_ZONES         3
 
+// Icon dimensions
+#define LAYOUT_ICON_SIZE           32
+#define LAYOUT_ICON_V_PADDING      8
+
 #endif

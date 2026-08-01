@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import com.le0xff.plauncher.model.LaunchApp
 import com.le0xff.plauncher.ui.AppTheme
+import com.le0xff.plauncher.util.IconConverter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -22,6 +23,33 @@ class AppDataStore(private val context: Context) {
         private const val KEY_AUTO_LAUNCH_TARGET = "auto_launch_target"
         private const val SEP = "|"
         private const val LINE_SEP = "\n"
+
+        private fun bytesToHex(data: ByteArray?): String {
+            if (data == null) return ""
+            return data.joinToString("") { "%02x".format(it) }
+        }
+
+        private fun hexToBytes(hex: String?): ByteArray? {
+            if (hex == null || hex.isBlank()) return null
+            if (hex.length % 2 != 0) return null
+            val result = ByteArray(hex.length / 2)
+            for (i in result.indices) {
+                val hi = hex.decodeDigit(i * 2)
+                val lo = hex.decodeDigit(i * 2 + 1)
+                result[i] = ((hi shl 4) or lo).toByte()
+            }
+            return result
+        }
+
+        private fun String.decodeDigit(index: Int): Int {
+            val c = this[index]
+            return when {
+                c in '0'..'9' -> c - '0'
+                c in 'a'..'f' -> c - 'a' + 10
+                c in 'A'..'F' -> c - 'A' + 10
+                else -> -1
+            }
+        }
     }
 
     private val _apps = MutableStateFlow<List<LaunchApp>>(loadApps())
@@ -50,7 +78,12 @@ class AppDataStore(private val context: Context) {
 
     fun saveApps(apps: List<LaunchApp>) {
         _apps.value = apps
-        prefs.edit().putString(KEY_APPS, apps.joinToString(LINE_SEP) { "${it.packageName}$SEP${it.displayName}" }).commit()
+        val lines = apps.joinToString(LINE_SEP) { app ->
+            val colorHex = bytesToHex(app.iconColorData)
+            val bwHex = bytesToHex(app.iconBwData)
+            "${app.packageName}$SEP${app.displayName}$SEP$colorHex$SEP$bwHex"
+        }
+        prefs.edit().putString(KEY_APPS, lines).commit()
     }
 
     fun reloadApps() {
@@ -75,8 +108,12 @@ class AppDataStore(private val context: Context) {
         val data = prefs.getString(KEY_APPS, "") ?: ""
         if (data.isBlank()) return emptyList()
         return data.split(LINE_SEP).mapNotNull { line ->
-            val parts = line.split(SEP, limit = 2)
-            if (parts.size == 2) LaunchApp(parts[0], parts[1]) else null
+            val parts = line.split(SEP)
+            return@mapNotNull when (parts.size) {
+                2 -> LaunchApp(parts[0], parts[1])
+                4 -> LaunchApp(parts[0], parts[1], hexToBytes(parts[2]), hexToBytes(parts[3]))
+                else -> null
+            }
         }
     }
 
@@ -142,6 +179,21 @@ class AppDataStore(private val context: Context) {
 
     private fun loadAutoLaunchTarget(): Int {
         return prefs.getInt(KEY_AUTO_LAUNCH_TARGET, 0)
+    }
+
+    fun refreshIcons(packageManager: PackageManager): List<LaunchApp> {
+        val current = _apps.value
+        val updated = current.map { app ->
+            val icons = IconConverter.getAppIconBitmaps(context, app.packageName)
+            if (icons.first != null || icons.second != null) {
+                app.copy(iconColorData = icons.first, iconBwData = icons.second)
+            } else {
+                app
+            }
+        }
+        _apps.value = updated
+        saveApps(updated)
+        return updated
     }
 
     fun exportAppsToYaml(originalNames: Map<String, String>, autoLaunchTarget: Int): String {
