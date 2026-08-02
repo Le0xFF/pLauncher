@@ -186,4 +186,70 @@ Content (icon, name, index) centered horizontally on full screen width. Text con
 
 **Descender padding**: `LAYOUT_NAME_DESCENDER` (4px) added to the minimum frame height ensures descender characters render fully. The Pebble font metrics report ascent height in `text_layer_get_content_size()` but do not include descent, requiring manual compensation.
 
-**Unchanged**: App icon display, index display, click handling, packet protocol, Android companion app. All existing features remain fully functional.
+**Unchanged**: App icon display, index display, packet protocol, Android companion app. All existing features remain fully functional.
+
+## Fix — Disable Buttons During Loading
+
+### Overview
+
+Fixed a race condition where pressing UP/DOWN/SELECT buttons during the "Loading..." phase caused the display to briefly show "No apps..." instead of "Loading...", because the loading flag was reset too early or not set at all during list transfers.
+
+### Analysis
+
+Three distinct timing issues were identified:
+
+1. **Initial app launch**: `s_loading` was initialized to `false`. The window's click config provider was called during `window_load`, before `window_appear` could set `s_loading = true` via `request_app_list()`. A fast user could press buttons before loading was activated, operating on an empty list.
+
+2. **Phone welcome resetting loading**: `handle_phone_welcome()` set `s_loading = false` upon receiving the phone's welcome packet. The protocol sends `PHONE_WELCOME` first, then app list chunks. This created a window between the welcome and the first list chunk where `s_loading` was `false`, buttons were active, and the list was empty.
+
+3. **Remote list transfers not activating loading**: When the companion app triggered a list resend (rename, reorder, sort, remove, add, import), `handle_app_list()` detected a new transfer ID and cleared the list, but did not set `s_loading = true`. The display showed "No apps..." and buttons operated on the cleared list.
+
+4. **Loading flag reset before display update**: In `handle_app_list()`, `s_loading = false` was set before `window_main_update_display()`. After the last chunk arrived, `s_loading` became `false` while the display still showed "Loading...", allowing button presses before the screen updated.
+
+### Fix
+
+**`pbw/src/c/packets.c`** — Four changes:
+
+1. `s_loading` static initializer changed from `false` to `true` — buttons blocked from the moment the binary starts.
+2. `handle_phone_welcome()`: removed `s_loading = false` — the welcome packet is not the list; loading stays active until the list completes.
+3. `handle_app_list()` new transfer path: added `s_loading = true` and `window_main_update_display()` when a new transfer ID is detected — display shows "Loading..." and buttons blocked immediately.
+4. `handle_app_list()` completion path: moved `s_loading = false` to after `window_main_update_display()` — display updates first, then buttons enabled.
+
+**`pbw/src/c/window_main_click.c`** — Added `packets_is_loading()` guard to each click handler:
+
+Each handler (`up_click_handler`, `down_click_handler`, `select_click_handler`) checks `packets_is_loading()` at entry and returns immediately if `true`. Buttons are always subscribed in `window_main_click_config_provider` (not conditionally), because the config provider is called once at window load time and cannot react to state changes.
+
+### Loading State Machine
+
+After the fix, `s_loading` follows a clean state machine:
+
+| Event | `s_loading` | Buttons |
+|---|---|---|
+| App starts (static init) | `true` | Blocked |
+| `window_appear` → `request_app_list()` | `true` | Blocked |
+| `PHONE_WELCOME` received | `true` | Blocked |
+| New transfer ID detected | `true` | Blocked |
+| Last list chunk received | Display updated, then `false` | Enabled |
+| Response timeout | `false` | Enabled |
+
+### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 2 | ~15 (packets.c ~8, window_main_click.c ~7) |
+
+### Build Status
+
+- Watch app: `pebble build` — BUILD SUCCESSFUL
+- Basalt: 29,385 B RAM / 64 KB, 36,151 B free heap, 4,588 B resources
+- Emery: 29,385 B RAM / 128 KB, 101,687 B free heap, 4,588 B resources
+
+### Design Decisions
+
+**Handler guards over config provider**: The click config provider is called once when the window is loaded. Conditionally subscribing buttons there would permanently disable them if loading was active at window creation. Guarding inside each handler ensures buttons always work after loading completes, regardless of when the window was created.
+
+**`s_loading` default `true`**: Ensures buttons are blocked from the very first moment the app runs, before any event loop callbacks execute. The flag is only cleared when the list is fully loaded and displayed.
+
+**Welcome doesn't clear loading**: The phone welcome is an acknowledgment, not data. Loading should only clear when actual app list data is received and rendered.
+
+**Timeout clears loading**: When the response times out (10s), there's no list data. Clearing loading lets the user see the empty state and retry.
