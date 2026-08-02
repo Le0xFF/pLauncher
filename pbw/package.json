@@ -34,6 +34,21 @@
           "name": "APP_ICON",
           "file": "images/app_launcher_icon.png",
           "aapl52png": "images/app_launcher_icon.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ICON_CARET_UP",
+          "file": "images/icon_caret_up.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ICON_CARET_DOWN",
+          "file": "images/icon_caret_down.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ICON_ROCKET",
+          "file": "images/icon_rocket.png"
         }
       ]
     }
