@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
@@ -28,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.le0xff.plauncher.PbwInstaller
 import com.le0xff.plauncher.R
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,6 +58,7 @@ fun SettingsScreen(
     var generalExpanded by remember { mutableStateOf(false) }
     var watchappExpanded by remember { mutableStateOf(false) }
     var permissionsExpanded by remember { mutableStateOf(false) }
+    var installExpanded by remember { mutableStateOf(false) }
     var debugExpanded by remember { mutableStateOf(false) }
     var importExportExpanded by remember { mutableStateOf(false) }
 
@@ -360,6 +363,73 @@ fun SettingsScreen(
                         Text(stringResource(R.string.button_grant))
                     }
                 }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        AccordionCard(
+            title = stringResource(R.string.settings_section_install_watchapp),
+            expanded = installExpanded,
+            onExpandedChange = { installExpanded = it }
+        ) {
+            Text(
+                text = stringResource(R.string.settings_install_watchapp_desc),
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            val pbwInfo = remember { PbwInstaller.getInfo(context) }
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Version: ",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.widthIn(min = 60.dp)
+                )
+                Text(
+                    text = pbwInfo.version,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "MD5:     ",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.widthIn(min = 60.dp)
+                )
+                Text(
+                    text = pbwInfo.md5,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = {
+                    when {
+                        !PbwInstaller.isBundled(context) ->
+                            Toast.makeText(context, R.string.install_watchapp_missing, Toast.LENGTH_LONG).show()
+                        !PbwInstaller.install(context) ->
+                            Toast.makeText(context, R.string.install_watchapp_none, Toast.LENGTH_LONG).show()
+                        else ->
+                            PbwInstaller.install(context)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.button_install_watchapp))
             }
         }
 

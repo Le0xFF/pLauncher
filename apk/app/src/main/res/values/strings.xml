@@ -123,4 +123,10 @@
     <string name="import_confirm_text">Importing will replace your current app list with %d apps from the file. This action cannot be undone.</string>
     <string name="import_button_replace">Replace</string>
     <string name="import_warnings_title">Import warnings</string>
+    <string name="settings_section_install_watchapp">Install watchapp</string>
+    <string name="settings_install_watchapp_desc">Installs the bundled pLauncher watchapp to your Pebble watch via the Pebble or Core Devices app</string>
+    <string name="button_install_watchapp">Install</string>
+    <string name="install_watchapp_missing">Watchapp not bundled in this build</string>
+    <string name="install_watchapp_none">No Pebble app found to install the watchapp</string>
+    <string name="install_watchapp_chooser">Install watchapp with</string>
 </resources>

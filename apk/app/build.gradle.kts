@@ -1,3 +1,6 @@
+import java.security.MessageDigest
+import java.util.regex.Pattern
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -60,4 +63,48 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+}
+
+val pbwDir = rootProject.projectDir.parentFile?.resolve("pbw") ?: file("../pbw")
+val watchPbw = pbwDir.resolve("build/pbw.pbw")
+
+val buildWatchapp = tasks.register<Exec>("buildWatchapp") {
+    workingDir = pbwDir
+    commandLine = listOf("pebble", "build")
+    isIgnoreExitValue = false
+    standardOutput = System.out
+    errorOutput = System.err
+}
+
+val bundleWatchPbw = tasks.register<Copy>("bundleWatchPbw") {
+    from(watchPbw)
+    into(layout.projectDirectory.dir("src/main/assets"))
+    rename { "plauncher.pbw" }
+    dependsOn(buildWatchapp)
+}
+
+val generatePbwInfo = tasks.register("generatePbwInfo") {
+    dependsOn(buildWatchapp)
+
+    doLast {
+        val appinfoFile = pbwDir.resolve("build/appinfo.json")
+        val versionLabel = if (appinfoFile.exists()) {
+            val content = appinfoFile.readText()
+            val pattern = Pattern.compile("\"versionLabel\"\\s*:\\s*\"([^\"]+)\"")
+            val matcher = pattern.matcher(content)
+            if (matcher.find()) matcher.group(1) else "unknown"
+        } else {
+            "unknown"
+        }
+
+        val md5 = MessageDigest.getInstance("MD5").digest(watchPbw.readBytes()).joinToString("") { "%02x".format(it) }
+
+        val infoFile = layout.projectDirectory.file("src/main/assets/pbw_info.txt").asFile
+        infoFile.writeText("version=$versionLabel\nmd5=$md5\n")
+    }
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn(bundleWatchPbw)
+    dependsOn(generatePbwInfo)
 }

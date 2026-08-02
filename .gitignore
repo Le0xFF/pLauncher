@@ -13,6 +13,8 @@ apk/.gradle/
 apk/.kotlin/
 apk/local.properties
 apk/*.hprof
+apk/app/src/main/assets/plauncher.pbw
+apk/app/src/main/assets/pbw_info.txt
 
 # IDE
 .idea/
