@@ -756,3 +756,150 @@ Icon centered on name area (left portion), vertically centered with text below. 
 **Graceful degradation**: Apps without icons still display correctly (hidden icon layer, name + index as before). Icon size mismatches are silently rejected, preventing corruption from stale data.
 
 **AdaptiveIconDrawable handling**: Android adaptive icons are rendered to a bitmap using the full drawable (both foreground and background layers), ensuring consistent appearance across icon types.
+
+---
+
+## #25 — Watchapp Installation via Companion App
+
+### Overview
+
+Integrated the watchapp installation mechanism into the pLauncher companion app, inspired by [Pebble Steer](https://github.com/bquelhas/pebble-steer). The compiled `.pbw` is automatically bundled into the APK at build time, and installed on the watch via a button in the Settings screen. The section also displays the bundled watchapp's version and MD5 hash.
+
+### Analysis
+
+- **Previous state**: The companion app had no mechanism to install the watchapp. Users had to manually build, locate, and share the `.pbw` file to the Pebble/Core Devices app.
+- **Reference implementation**: [Pebble Steer](https://github.com/bquelhas/pebble-steer) implements `.pbw` installation with a Gradle `bundleWatchPbw` task (Copy), `PbwInstaller.kt` (runtime install), UI button, manifest queries, and `file_paths.xml`. Steer does not expose version/MD5 information.
+- **Build integration**: Three Gradle tasks automate the build: `buildWatchapp` (Exec, runs `pebble build`), `bundleWatchPbw` (Copy, copies `.pbw` to assets), `generatePbwInfo` (generates `pbw_info.txt` with version from `appinfo.json` and MD5 from `.pbw`). The chain is mandatory — if `pebble build` fails, the APK build fails.
+- **Runtime installation**: `PbwInstaller` copies the bundled `.pbw` from assets to `cacheDir/pbw/`, exposes it via `FileProvider`, and launches `ACTION_VIEW` with `application/octet-stream` MIME type. The system shows a chooser to select the Pebble or Core Devices app.
+- **Version/MD5 display**: `pbw_info.txt` is generated at build time with `key=value` format. At runtime, `PbwInstaller.getInfo()` reads and parses it. The Settings screen displays both values with aligned labels and monospace values.
+
+### Android Companion App (`apk/`) — ~110 lines changed across 7 files
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `app/build.gradle.kts` | Added imports `java.security.MessageDigest`, `java.util.regex.Pattern`. Added three Gradle tasks: `buildWatchapp` (Exec, runs `pebble build` in `pbw/` directory), `bundleWatchPbw` (Copy, copies `.pbw` to `assets/` as `plauncher.pbw`), `generatePbwInfo` (DefaultTask, extracts `versionLabel` from `appinfo.json` via regex, computes MD5 of `.pbw`, writes `pbw_info.txt`). All tasks are hard dependencies of `merge*Assets`. Path resolution uses `rootProject.projectDir.parentFile?.resolve("pbw")` to correctly locate `pbw/` from the `app/` subproject. |
+| `app/src/main/assets/.gitkeep` (new) | Empty file to keep the `assets/` directory in git. |
+| `app/src/main/java/com/le0xff/plauncher/PbwInstaller.kt` (new) | Created `object PbwInstaller` with `isBundled()`, `getInfo()`, `stage()`, `install()` functions. Created `data class PbwInfo(version, md5)`. Installation stages the `.pbw` to `cacheDir/pbw/`, obtains URI via `FileProvider`, and launches `ACTION_VIEW` with a chooser. |
+| `app/src/main/res/values/strings.xml` | Added 7 new strings: `settings_section_install_watchapp`, `settings_install_watchapp_desc`, `button_install_watchapp`, `install_watchapp_missing`, `install_watchapp_none`, `install_watchapp_chooser`. |
+| `app/src/main/res/xml/file_paths.xml` | Added `<cache-path name="pbw" path="pbw/" />` alongside existing exports path. |
+| `app/src/main/AndroidManifest.xml` | Added `<queries>` entry for `ACTION_VIEW` with `application/octet-stream` MIME type, required for `resolveActivity()` on Android 11+. |
+| `ui/SettingsScreen.kt` | Added imports for `Toast`, `PbwInstaller`. Added `installExpanded` state. Added "Install watchapp" accordion card between Permissions and Debug with description, version/MD5 (aligned rows with `widthIn(min = 60.dp)` on labels, monospace values, `Modifier.weight(1f)`), and Install button. Button handles three cases: pbw missing (Toast), no handler app (Toast), success (silently launches chooser). |
+
+#### Key Implementation Details
+
+**Gradle build tasks** (`build.gradle.kts`):
+```kotlin
+val buildWatchapp = tasks.register<Exec>("buildWatchapp") {
+    workingDir = pbwDir
+    commandLine = listOf("pebble", "build")
+}
+
+val bundleWatchPbw = tasks.register<Copy>("bundleWatchPbw") {
+    from(watchPbw)
+    into(layout.projectDirectory.dir("src/main/assets"))
+    rename { "plauncher.pbw" }
+    dependsOn(buildWatchapp)
+}
+
+val generatePbwInfo = tasks.register("generatePbwInfo") {
+    dependsOn(buildWatchapp)
+    doLast {
+        // Extract versionLabel from appinfo.json via regex
+        // Compute MD5 of pbw.pbw via MessageDigest
+        // Write pbw_info.txt with version=... and md5=...
+    }
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn(bundleWatchPbw)
+    dependsOn(generatePbwInfo)
+}
+```
+The dependency chain is mandatory: `merge*Assets` → `bundleWatchPbw` + `generatePbwInfo` → `buildWatchapp`. If `pebble build` fails, the APK build fails.
+
+**PbwInstaller** (`PbwInstaller.kt`):
+```kotlin
+object PbwInstaller {
+    fun isBundled(context: Context): Boolean
+    fun getInfo(context: Context): PbwInfo
+    fun stage(context: Context): File?
+    fun install(context: Context): Boolean
+}
+```
+`isBundled()` checks asset existence. `getInfo()` parses `pbw_info.txt` with `runCatching`, returns `"unknown"` on failure. `stage()` copies to `cacheDir/pbw/`. `install()` stages, builds FileProvider URI, checks for handler via `resolveActivity()`, launches chooser.
+
+**Version/MD5 alignment** (`SettingsScreen.kt`):
+```kotlin
+Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Text(text = "Version: ", ..., modifier = Modifier.widthIn(min = 60.dp))
+    Text(text = pbwInfo.version, ..., fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+}
+Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Text(text = "MD5:     ", ..., modifier = Modifier.widthIn(min = 60.dp))
+    Text(text = pbwInfo.md5, ..., fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+}
+```
+Both labels use `widthIn(min = 60.dp)` for equal width. Values use monospace font with `weight(1f)` for consistent alignment.
+
+**Install button behavior**:
+```kotlin
+when {
+    !PbwInstaller.isBundled(context) -> Toast(..., R.string.install_watchapp_missing, ...)
+    !PbwInstaller.install(context)   -> Toast(..., R.string.install_watchapp_none, ...)
+    else -> PbwInstaller.install(context)  // silently launches chooser
+}
+```
+Success case is silent (no toast). Only error cases show feedback.
+
+#### Layout
+
+Settings screen order:
+```
+┌─────────────────────────────────┐
+│ Settings                        │
+│                                 │
+│ ▸ General                       │
+│ ▸ Watchapp settings             │
+│ ▸ Import/Export                 │
+│ ▸ Permissions                   │
+│ ▸ Install watchapp              │
+│   Installs the bundled...       │
+│   Version: 1.0.0                │
+│   MD5: f9ebd622cb5efac...      │
+│   [Install]                     │
+│ ▸ Debug                         │
+│                                 │
+│               v1.0.0            │
+└─────────────────────────────────┘
+```
+
+#### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 0 | 0 (unchanged) |
+| Android App (Kotlin) | 7 | ~110 (build.gradle.kts ~40, PbwInstaller.kt 64 new, strings 7 lines, file_paths.xml 1 line, manifest 4 lines, SettingsScreen ~25 lines, assets 1 line) |
+| **Total** | **7** | **~110** |
+
+#### Build Status
+
+- Watch app: `pebble build` — invoked automatically by `buildWatchapp` Gradle task
+- Android app: `./gradlew clean assembleDebug` — BUILD SUCCESSFUL
+- APK contains `assets/plauncher.pbw` and `assets/pbw_info.txt`
+- MD5 in `pbw_info.txt` matches `md5sum` of source `.pbw`
+
+#### Design Decisions
+
+**Mandatory build dependency**: `buildWatchapp` is a hard dependency of `bundleWatchPbw` and `generatePbwInfo`. If `pebble build` fails (e.g., compilation error), the APK build fails. This ensures the bundled `.pbw` always matches the current source.
+
+**Build-time info file**: Version and MD5 are computed at build time and written to `pbw_info.txt`. At runtime, the app reads this simple `key=value` file instead of decompressing the ZIP or computing hash. This avoids runtime dependencies and keeps the UI responsive.
+
+**Silent success**: The Install button's success case (chooser launched) produces no toast, avoiding redundant feedback. Only error cases (missing pbw, no handler app) show Toast messages.
+
+**Aligned version/MD5**: Labels use fixed minimum width (`60.dp`) so values start at the same horizontal position. Values use monospace font for readability of the MD5 hash.
+
+**Reference**: Inspired by [Pebble Steer](https://github.com/bquelhas/pebble-steer) (`PbwInstaller.kt`, `bundleWatchPbw` task, manifest queries, `file_paths.xml`). Extended with version/MD5 display and mandatory build integration.
+
+**Unchanged**: All existing features remain fully functional. Watch app (`pbw/`) is unchanged.
