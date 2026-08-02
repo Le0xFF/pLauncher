@@ -21,3 +21,6 @@ apk/app/src/main/assets/pbw_info.txt
 *.iml
 *.iws
 *.ipr
+
+# Backup files
+**/*~*
