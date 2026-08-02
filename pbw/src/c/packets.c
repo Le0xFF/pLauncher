@@ -7,7 +7,7 @@
 static bool s_waiting_for_response = false;
 static AppTimer* s_response_timer = NULL;
 static uint8_t s_current_transfer_id = 0;
-static bool s_loading = false;
+static bool s_loading = true;
 static AppTimer* s_auto_launch_timer = NULL;
 static bool s_auto_launch_pending = false;
 
@@ -186,7 +186,6 @@ static void handle_phone_welcome(DictionaryIterator* iter) {
     }
     s_waiting_for_response = false;
     s_current_transfer_id = 0;
-    s_loading = false;
 
     Tuple* t = dict_find(iter, KEY_PROTOCOL_VERSION);
     if (t) {
@@ -210,7 +209,9 @@ static void handle_app_list(DictionaryIterator* iter) {
 
     if (transfer_id > s_current_transfer_id) {
         s_current_transfer_id = transfer_id;
+        s_loading = true;
         app_list_clear();
+        window_main_update_display();
         APP_LOG(APP_LOG_LEVEL_INFO, "New transfer started (id=%d)", transfer_id);
     }
 
@@ -245,8 +246,6 @@ static void handle_app_list(DictionaryIterator* iter) {
     }
 
     if (is_last) {
-        s_loading = false;
-
         if (s_auto_launch_enabled && s_auto_launch_target < (uint8_t)app_list_get_count()) {
             app_list_set_current_index(s_auto_launch_target);
         } else {
@@ -254,6 +253,7 @@ static void handle_app_list(DictionaryIterator* iter) {
         }
 
         window_main_update_display();
+        s_loading = false;
         APP_LOG(APP_LOG_LEVEL_INFO, "App list complete: %d apps loaded (id=%d)", app_list_get_count(), s_current_transfer_id);
 
         schedule_auto_launch();

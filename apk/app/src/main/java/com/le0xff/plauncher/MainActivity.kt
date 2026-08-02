@@ -270,7 +270,6 @@ class MainActivity : ComponentActivity() {
                         dataStore.saveApps(result.apps)
                         validateAutoLaunchTarget(result.apps)
                         coroutineScope.launch {
-                            senderHelper.sendAppList(result.apps, null)
                             senderHelper.sendAutoLaunchTarget(result.autoLaunchTarget.toUInt())
                         }
                         sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
@@ -468,9 +467,6 @@ class MainActivity : ComponentActivity() {
                                     viewModel.setApps(reordered)
                                     dataStore.saveApps(reordered)
                                     validateAutoLaunchTarget(reordered)
-                                    coroutineScope.launch {
-                                        senderHelper.sendAppList(reordered, null)
-                                    }
                                     sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                                 }
                             },
@@ -480,9 +476,6 @@ class MainActivity : ComponentActivity() {
                                     viewModel.setApps(sorted)
                                     dataStore.saveApps(sorted)
                                     validateAutoLaunchTarget(sorted)
-                                    coroutineScope.launch {
-                                        senderHelper.sendAppList(sorted, null)
-                                    }
                                     sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                                 }
                             },
@@ -565,9 +558,6 @@ class MainActivity : ComponentActivity() {
                                 viewModel.setApps(updatedApps)
                                 validateAutoLaunchTarget(updatedApps)
                                 viewModel.setRemoveAppTarget(null)
-                                coroutineScope.launch {
-                                    senderHelper.sendAppList(updatedApps, null)
-                                }
                                 sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                             }) {
                                 Text(stringResource(R.string.confirm_remove_confirm))
@@ -628,9 +618,6 @@ class MainActivity : ComponentActivity() {
                                 viewModel.setApps(updatedApps)
                                 validateAutoLaunchTarget(updatedApps)
                                 viewModel.setRenameAppTarget(null)
-                                coroutineScope.launch {
-                                    senderHelper.sendAppList(updatedApps, null)
-                                }
                                 sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                             }) {
                                 Text(stringResource(R.string.rename_button_save))
@@ -651,9 +638,6 @@ class MainActivity : ComponentActivity() {
                                     viewModel.setApps(updatedApps)
                                     validateAutoLaunchTarget(updatedApps)
                                     viewModel.setRenameAppTarget(null)
-                                    coroutineScope.launch {
-                                        senderHelper.sendAppList(updatedApps, null)
-                                    }
                                     sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                                 }) {
                                     Text(stringResource(R.string.rename_button_reset))
@@ -674,9 +658,6 @@ class MainActivity : ComponentActivity() {
                                 viewModel.setApps(selectedApps)
                                 validateAutoLaunchTarget(selectedApps)
                                 viewModel.setShowPicker(false)
-                                coroutineScope.launch {
-                                    senderHelper.sendAppList(selectedApps, null)
-                                }
                                 sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                             }
                         )
