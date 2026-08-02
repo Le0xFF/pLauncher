@@ -40,10 +40,14 @@ static void window_load(Window* window) {
     int h = bounds.size.h;
     int y_name = h / 2 - LAYOUT_NAME_V_OFFSET;
 
-    s_text_layer = text_layer_create(GRect(0, y_name, w, LAYOUT_NAME_FONT_HEIGHT));
+    int nav_x = w - (w / LAYOUT_NAV_COL_DIVISOR);
+    int text_width = 2 * nav_x - w - LAYOUT_TEXT_H_MARGIN;
+    int text_x = (w - text_width) / 2;
+    s_text_layer = text_layer_create(GRect(text_x, y_name, text_width, LAYOUT_NAME_MAX_HEIGHT));
     text_layer_set_text(s_text_layer, "");
     text_layer_set_text_alignment(s_text_layer, GTextAlignmentCenter);
     text_layer_set_font(s_text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
+    text_layer_set_overflow_mode(s_text_layer, GTextOverflowModeWordWrap);
     layer_add_child(window_layer, text_layer_get_layer(s_text_layer));
 
     s_index_layer = text_layer_create(GRect(0, h - LAYOUT_INDEX_BOTTOM_MARGIN, w, LAYOUT_INDEX_FONT_HEIGHT));
@@ -60,7 +64,6 @@ static void window_load(Window* window) {
     int y_up = y_step / 2 - LAYOUT_ICON_NAV_SIZE / 2;
     int y_launch = y_step + y_up;
     int y_down = 2 * y_step + y_up;
-    int nav_x = w - (w / LAYOUT_NAV_COL_DIVISOR);
     int nav_w = w / LAYOUT_NAV_COL_DIVISOR;
     int icon_x = nav_x + (nav_w - LAYOUT_ICON_NAV_SIZE) / 2;
 
@@ -136,6 +139,23 @@ void window_main_update_display(void) {
         int icon_y = (h - LAYOUT_NAME_FONT_HEIGHT - LAYOUT_ICON_SIZE - LAYOUT_ICON_V_PADDING * 2) / 2;
         layer_set_frame(bitmap_layer_get_layer(s_icon_layer), GRect(icon_x, icon_y, LAYOUT_ICON_SIZE, LAYOUT_ICON_SIZE));
 
+        int nav_x = w - (w / LAYOUT_NAV_COL_DIVISOR);
+        int text_width = 2 * nav_x - w - LAYOUT_TEXT_H_MARGIN;
+        int text_x = (w - text_width) / 2;
+        layer_set_frame(text_layer_get_layer(s_text_layer), GRect(text_x, 0, text_width, LAYOUT_NAME_MAX_HEIGHT));
+
+        GSize content_size = text_layer_get_content_size(s_text_layer);
+        int text_height = content_size.h;
+        if (text_height > LAYOUT_NAME_MAX_HEIGHT) {
+            text_height = LAYOUT_NAME_MAX_HEIGHT;
+        }
+        if (text_height < LAYOUT_NAME_FONT_HEIGHT + LAYOUT_NAME_DESCENDER) {
+            text_height = LAYOUT_NAME_FONT_HEIGHT + LAYOUT_NAME_DESCENDER;
+        }
+
+        int text_y = icon_y + LAYOUT_ICON_SIZE + LAYOUT_ICON_V_PADDING;
+        layer_set_frame(text_layer_get_layer(s_text_layer), GRect(text_x, text_y, text_width, text_height));
+
         if (app_list_has_icon()) {
             memcpy(gbitmap_get_data(s_icon_bitmap), app_list_get_icon(), APP_ICON_SIZE);
             bitmap_layer_set_bitmap(s_icon_layer, s_icon_bitmap);
@@ -146,9 +166,6 @@ void window_main_update_display(void) {
             APP_LOG(APP_LOG_LEVEL_DEBUG, "No icon for: %s", s_display_buf);
         }
 
-        int text_y = icon_y + LAYOUT_ICON_SIZE + LAYOUT_ICON_V_PADDING;
-        layer_set_frame(text_layer_get_layer(s_text_layer), GRect(0, text_y, w, LAYOUT_NAME_FONT_HEIGHT));
-
         snprintf(s_index_buf, sizeof(s_index_buf), "%d/%d", app_list_get_current_index() + 1, count);
         text_layer_set_text(s_index_layer, s_index_buf);
         layer_set_frame(text_layer_get_layer(s_index_layer), GRect(0, h - LAYOUT_INDEX_BOTTOM_MARGIN, w, LAYOUT_INDEX_FONT_HEIGHT));
@@ -158,15 +175,20 @@ void window_main_update_display(void) {
         layer_set_hidden((Layer *)s_icon_down, false);
         layer_set_hidden((Layer *)s_icon_launch, false);
     } else {
+        int w = s_screen_bounds.size.w;
+        int h = s_screen_bounds.size.h;
+
+        int nav_x = w - (w / LAYOUT_NAV_COL_DIVISOR);
+        int text_width = 2 * nav_x - w - LAYOUT_TEXT_H_MARGIN;
+        int text_x = (w - text_width) / 2;
+        layer_set_frame(text_layer_get_layer(s_text_layer), GRect(text_x, 0, text_width, h));
+
         text_layer_set_text(s_text_layer, packets_is_loading() ? STR_LOADING_MESSAGE : str_empty_message());
         layer_set_hidden((Layer *)s_icon_layer, true);
 
-        int w = s_screen_bounds.size.w;
-        int h = s_screen_bounds.size.h;
-        layer_set_frame(text_layer_get_layer(s_text_layer), GRect(0, 0, w, h));
         GSize content_size = text_layer_get_content_size(s_text_layer);
         int y_empty = (h - content_size.h) / 2;
-        layer_set_frame(text_layer_get_layer(s_text_layer), GRect(0, y_empty, w, content_size.h));
+        layer_set_frame(text_layer_get_layer(s_text_layer), GRect(text_x, y_empty, text_width, content_size.h));
 
         text_layer_set_text(s_index_layer, "");
         layer_set_hidden((Layer *)s_index_layer, true);

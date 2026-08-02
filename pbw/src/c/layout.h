@@ -26,4 +26,14 @@
 #define LAYOUT_ICON_SIZE           32
 #define LAYOUT_ICON_V_PADDING      8
 
+// Extra horizontal margin on each side of the centered text area
+#define LAYOUT_TEXT_H_MARGIN       4
+
+// Descender padding per line (extra pixels below font height for g, y, p, q)
+#define LAYOUT_NAME_DESCENDER      4
+
+// Maximum height for app name text (allows multi-line word wrap + descenders)
+#define LAYOUT_NAME_MAX_LINES      3
+#define LAYOUT_NAME_MAX_HEIGHT     (LAYOUT_NAME_FONT_HEIGHT * LAYOUT_NAME_MAX_LINES + LAYOUT_NAME_DESCENDER)
+
 #endif
