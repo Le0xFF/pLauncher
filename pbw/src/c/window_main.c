@@ -9,9 +9,12 @@
 static Window* s_window;
 static TextLayer* s_text_layer;
 static TextLayer* s_index_layer;
-static TextLayer* s_label_up;
-static TextLayer* s_label_down;
-static TextLayer* s_label_launch;
+static BitmapLayer* s_icon_up;
+static BitmapLayer* s_icon_down;
+static BitmapLayer* s_icon_launch;
+static GBitmap* s_bitmap_caret_up;
+static GBitmap* s_bitmap_caret_down;
+static GBitmap* s_bitmap_rocket;
 static BitmapLayer* s_icon_layer;
 static GBitmap* s_icon_bitmap;
 static GRect s_screen_bounds;
@@ -35,53 +38,60 @@ static void window_load(Window* window) {
 
     int w = bounds.size.w;
     int h = bounds.size.h;
-    int w_label = w / LAYOUT_LABEL_COL_DIVISOR;
-    int w_name = w - w_label;
     int y_name = h / 2 - LAYOUT_NAME_V_OFFSET;
 
-    s_text_layer = text_layer_create(GRect(0, y_name, w_name, LAYOUT_NAME_FONT_HEIGHT));
+    s_text_layer = text_layer_create(GRect(0, y_name, w, LAYOUT_NAME_FONT_HEIGHT));
     text_layer_set_text(s_text_layer, "");
     text_layer_set_text_alignment(s_text_layer, GTextAlignmentCenter);
     text_layer_set_font(s_text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
     layer_add_child(window_layer, text_layer_get_layer(s_text_layer));
 
-    s_index_layer = text_layer_create(GRect(0, bounds.size.h - LAYOUT_INDEX_BOTTOM_MARGIN, bounds.size.w, LAYOUT_INDEX_FONT_HEIGHT));
+    s_index_layer = text_layer_create(GRect(0, h - LAYOUT_INDEX_BOTTOM_MARGIN, w, LAYOUT_INDEX_FONT_HEIGHT));
     text_layer_set_text(s_index_layer, "");
     text_layer_set_text_alignment(s_index_layer, GTextAlignmentCenter);
     text_layer_set_font(s_index_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
     layer_add_child(window_layer, text_layer_get_layer(s_index_layer));
 
-    int h_label = LAYOUT_LABEL_FONT_HEIGHT;
-    int y_step = h / LAYOUT_LABEL_ZONES;
-    int y_up = y_step / 2 - h_label / 2;
+    s_bitmap_caret_up = gbitmap_create_with_resource(RESOURCE_ID_ICON_CARET_UP);
+    s_bitmap_caret_down = gbitmap_create_with_resource(RESOURCE_ID_ICON_CARET_DOWN);
+    s_bitmap_rocket = gbitmap_create_with_resource(RESOURCE_ID_ICON_ROCKET);
+
+    int y_step = h / LAYOUT_NAV_ZONES;
+    int y_up = y_step / 2 - LAYOUT_ICON_NAV_SIZE / 2;
     int y_launch = y_step + y_up;
     int y_down = 2 * y_step + y_up;
+    int nav_x = w - (w / LAYOUT_NAV_COL_DIVISOR);
+    int nav_w = w / LAYOUT_NAV_COL_DIVISOR;
+    int icon_x = nav_x + (nav_w - LAYOUT_ICON_NAV_SIZE) / 2;
 
-    s_label_up = text_layer_create(GRect(w - w_label, y_up, w_label, h_label));
-    text_layer_set_text(s_label_up, STR_LABEL_UP);
-    text_layer_set_text_alignment(s_label_up, GTextAlignmentCenter);
-    text_layer_set_font(s_label_up, fonts_get_system_font(FONT_KEY_GOTHIC_18));
-    layer_add_child(window_layer, text_layer_get_layer(s_label_up));
+    s_icon_up = bitmap_layer_create(GRect(icon_x, y_up, LAYOUT_ICON_NAV_SIZE, LAYOUT_ICON_NAV_SIZE));
+    bitmap_layer_set_bitmap(s_icon_up, s_bitmap_caret_up);
+    bitmap_layer_set_compositing_mode(s_icon_up, GCompOpSet);
+    bitmap_layer_set_background_color(s_icon_up, GColorClear);
+    layer_add_child(window_layer, bitmap_layer_get_layer(s_icon_up));
 
-    s_label_launch = text_layer_create(GRect(w - w_label, y_launch, w_label, h_label));
-    text_layer_set_text(s_label_launch, STR_LABEL_LAUNCH);
-    text_layer_set_text_alignment(s_label_launch, GTextAlignmentCenter);
-    text_layer_set_font(s_label_launch, fonts_get_system_font(FONT_KEY_GOTHIC_18));
-    layer_add_child(window_layer, text_layer_get_layer(s_label_launch));
+    s_icon_launch = bitmap_layer_create(GRect(icon_x, y_launch, LAYOUT_ICON_NAV_SIZE, LAYOUT_ICON_NAV_SIZE));
+    bitmap_layer_set_bitmap(s_icon_launch, s_bitmap_rocket);
+    bitmap_layer_set_compositing_mode(s_icon_launch, GCompOpSet);
+    bitmap_layer_set_background_color(s_icon_launch, GColorClear);
+    layer_add_child(window_layer, bitmap_layer_get_layer(s_icon_launch));
 
-    s_label_down = text_layer_create(GRect(w - w_label, y_down, w_label, h_label));
-    text_layer_set_text(s_label_down, STR_LABEL_DOWN);
-    text_layer_set_text_alignment(s_label_down, GTextAlignmentCenter);
-    text_layer_set_font(s_label_down, fonts_get_system_font(FONT_KEY_GOTHIC_18));
-    layer_add_child(window_layer, text_layer_get_layer(s_label_down));
+    s_icon_down = bitmap_layer_create(GRect(icon_x, y_down, LAYOUT_ICON_NAV_SIZE, LAYOUT_ICON_NAV_SIZE));
+    bitmap_layer_set_bitmap(s_icon_down, s_bitmap_caret_down);
+    bitmap_layer_set_compositing_mode(s_icon_down, GCompOpSet);
+    bitmap_layer_set_background_color(s_icon_down, GColorClear);
+    layer_add_child(window_layer, bitmap_layer_get_layer(s_icon_down));
 
     window_set_click_config_provider(window, window_main_click_config_provider);
 }
 
 static void window_unload(Window* window) {
-    text_layer_destroy(s_label_up);
-    text_layer_destroy(s_label_down);
-    text_layer_destroy(s_label_launch);
+    bitmap_layer_destroy(s_icon_up);
+    bitmap_layer_destroy(s_icon_down);
+    bitmap_layer_destroy(s_icon_launch);
+    gbitmap_destroy(s_bitmap_caret_up);
+    gbitmap_destroy(s_bitmap_caret_down);
+    gbitmap_destroy(s_bitmap_rocket);
     text_layer_destroy(s_text_layer);
     text_layer_destroy(s_index_layer);
     bitmap_layer_destroy(s_icon_layer);
@@ -121,10 +131,8 @@ void window_main_update_display(void) {
 
         int w = s_screen_bounds.size.w;
         int h = s_screen_bounds.size.h;
-        int w_label = w / LAYOUT_LABEL_COL_DIVISOR;
-        int w_name = w - w_label;
 
-        int icon_x = (w_name - LAYOUT_ICON_SIZE) / 2;
+        int icon_x = (w - LAYOUT_ICON_SIZE) / 2;
         int icon_y = (h - LAYOUT_NAME_FONT_HEIGHT - LAYOUT_ICON_SIZE - LAYOUT_ICON_V_PADDING * 2) / 2;
         layer_set_frame(bitmap_layer_get_layer(s_icon_layer), GRect(icon_x, icon_y, LAYOUT_ICON_SIZE, LAYOUT_ICON_SIZE));
 
@@ -139,28 +147,26 @@ void window_main_update_display(void) {
         }
 
         int text_y = icon_y + LAYOUT_ICON_SIZE + LAYOUT_ICON_V_PADDING;
-        layer_set_frame(text_layer_get_layer(s_text_layer), GRect(0, text_y, w_name, LAYOUT_NAME_FONT_HEIGHT));
+        layer_set_frame(text_layer_get_layer(s_text_layer), GRect(0, text_y, w, LAYOUT_NAME_FONT_HEIGHT));
 
         snprintf(s_index_buf, sizeof(s_index_buf), "%d/%d", app_list_get_current_index() + 1, count);
         text_layer_set_text(s_index_layer, s_index_buf);
-        layer_set_frame(text_layer_get_layer(s_index_layer), GRect(0, h - LAYOUT_INDEX_BOTTOM_MARGIN, w_name, LAYOUT_INDEX_FONT_HEIGHT));
+        layer_set_frame(text_layer_get_layer(s_index_layer), GRect(0, h - LAYOUT_INDEX_BOTTOM_MARGIN, w, LAYOUT_INDEX_FONT_HEIGHT));
         layer_set_hidden((Layer *)s_index_layer, false);
 
-        layer_set_hidden((Layer *)s_label_up, false);
-        layer_set_hidden((Layer *)s_label_down, false);
-        layer_set_hidden((Layer *)s_label_launch, false);
+        layer_set_hidden((Layer *)s_icon_up, false);
+        layer_set_hidden((Layer *)s_icon_down, false);
+        layer_set_hidden((Layer *)s_icon_launch, false);
     } else {
         text_layer_set_text(s_text_layer, packets_is_loading() ? STR_LOADING_MESSAGE : str_empty_message());
         layer_set_hidden((Layer *)s_icon_layer, true);
 
         int w = s_screen_bounds.size.w;
         int h = s_screen_bounds.size.h;
-        int w_label = w / LAYOUT_LABEL_COL_DIVISOR;
-        int w_name = w - w_label;
-        layer_set_frame(text_layer_get_layer(s_text_layer), GRect(0, 0, w_name, h));
+        layer_set_frame(text_layer_get_layer(s_text_layer), GRect(0, 0, w, h));
         GSize content_size = text_layer_get_content_size(s_text_layer);
         int y_empty = (h - content_size.h) / 2;
-        layer_set_frame(text_layer_get_layer(s_text_layer), GRect(0, y_empty, w_name, content_size.h));
+        layer_set_frame(text_layer_get_layer(s_text_layer), GRect(0, y_empty, w, content_size.h));
 
         text_layer_set_text(s_index_layer, "");
         layer_set_hidden((Layer *)s_index_layer, true);
