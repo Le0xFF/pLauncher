@@ -71,7 +71,7 @@ val watchPbw = pbwDir.resolve("build/pbw.pbw")
 val buildWatchapp = tasks.register<Exec>("buildWatchapp") {
     workingDir = pbwDir
     commandLine = listOf("pebble", "build")
-    isIgnoreExitValue = false
+    isIgnoreExitValue = true
     standardOutput = System.out
     errorOutput = System.err
 }
@@ -81,10 +81,12 @@ val bundleWatchPbw = tasks.register<Copy>("bundleWatchPbw") {
     into(layout.projectDirectory.dir("src/main/assets"))
     rename { "plauncher.pbw" }
     dependsOn(buildWatchapp)
+    onlyIf { watchPbw.exists() }
 }
 
 val generatePbwInfo = tasks.register("generatePbwInfo") {
     dependsOn(buildWatchapp)
+    onlyIf { watchPbw.exists() }
 
     doLast {
         val appinfoFile = pbwDir.resolve("build/appinfo.json")
