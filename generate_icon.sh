@@ -2,9 +2,13 @@
 #
 # Icon generation script for pLauncher Android companion app.
 #
-# Usage: ./generate_icon.sh <source_png>
+# Usage: ./generate_icon.sh <source_kra_or_png>
 #
-# Expects a square PNG with a transparent background (logo only).
+# Accepts a .kra (Krita) or .png file.
+# A .kra file is exported to PNG via Krita headless.
+# A .png file is used directly.
+# The PNG output is always written to apk/pLauncher.png.
+# Expects a square image with a transparent background (logo only).
 # Generates:
 #   - Legacy mipmap icons (mdpi to xxxhdpi)
 #   - Foreground drawable (full-res, nodpi)
@@ -19,7 +23,7 @@
 set -e
 
 if [ $# -lt 1 ]; then
-    printf "Usage: %s <source_png>\n" "$0"
+    printf "Usage: %s <source_kra_or_png>\n" "$0"
     exit 1
 fi
 
@@ -33,6 +37,32 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APK_DIR="${SCRIPT_DIR}/apk"
 RES_DIR="${APK_DIR}/app/src/main/res"
+
+# --- Format detection and source acquisition ---
+PNG_OUTPUT="${APK_DIR}/pLauncher.png"
+
+case "${SOURCE##*.}" in
+    kra)
+        if ! command -v krita >/dev/null 2>&1; then
+            printf "Error: krita not found in PATH\n"
+            exit 1
+        fi
+        printf "Exporting KRA to PNG...\n"
+        if ! krita --export --export-filename "$PNG_OUTPUT" "$SOURCE" >/dev/null 2>&1; then
+            printf "Error: krita export failed for %s\n" "$SOURCE"
+            exit 1
+        fi
+        SOURCE="$PNG_OUTPUT"
+        ;;
+    png)
+        cp "$SOURCE" "$PNG_OUTPUT"
+        SOURCE="$PNG_OUTPUT"
+        ;;
+    *)
+        printf "Error: unsupported format '%s'. Expected .kra or .png\n" "${SOURCE##*.}"
+        exit 1
+        ;;
+esac
 
 # --- Verify source ---
 SIZE=$(identify -format "%wx%h" "$SOURCE")
