@@ -188,7 +188,7 @@ Content (icon, name, index) centered horizontally on full screen width. Text con
 
 **Unchanged**: App icon display, index display, packet protocol, Android companion app. All existing features remain fully functional.
 
-## Fix — Disable Buttons During Loading
+## #27 — Fix: Disable Buttons During Loading
 
 ### Overview
 
@@ -253,3 +253,142 @@ After the fix, `s_loading` follows a clean state machine:
 **Welcome doesn't clear loading**: The phone welcome is an acknowledgment, not data. Loading should only clear when actual app list data is received and rendered.
 
 **Timeout clears loading**: When the response times out (10s), there's no list data. Clearing loading lets the user see the empty state and retry.
+
+## #28 — Android Companion App: App Icon, Adaptive Icon, and Splash Screen
+
+### Overview
+
+Added a proper app icon to the Android companion app (`apk/`) using a user-provided PNG image. Implemented legacy mipmap bitmaps (API < 26), adaptive icons with background/foreground/monochrome layers (API 26+), and a branded splash screen with magenta background and logo. Created a POSIX-compliant generation script (`generate_icon.sh`) that accepts any square PNG with transparent background and produces all required resources.
+
+### Analysis
+
+- **Previous state**: The Android project had no icon configured. `AndroidManifest.xml` had no `android:icon` or `android:roundIcon` in `<application>`. `res/` had no `mipmap-*` directories. `res/drawable/` was empty.
+- **Source image**: `pLauncher_big.png`, PNG 1400×1400 RGBA, with transparent background. The logo contains a stylized "L" (white with gradient) and "p" (cyan `#58cef8` with pink `#e4adcd` crossbar), both with black outlines. Colors used: `#cf62a9` (magenta), `#e4adcd` (light pink), `#58cef8` (cyan), `#ffffff` (white).
+- **Target SDK**: minSdk 24, targetSdk 36. Required supporting both legacy icons (API < 26) and adaptive icons (API 26+).
+- **Adaptive icon specs**: Canvas 108×108 dp, safe zone 66×66 dp (21 dp margin per side for masking). Required layers: `background` + `foreground` + `monochrome` (Android 13+ theming).
+
+### Android App (`apk/`) — ~10 files created/modified
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `app/src/main/AndroidManifest.xml` | Added `android:icon="@mipmap/ic_launcher"` and `android:roundIcon="@mipmap/ic_launcher_round"` to `<application>`. Changed MainActivity theme to `@style/Theme.pLauncher.Splash`. Changed `<application>` theme to `@style/Theme.pLauncher.Splash`. |
+
+#### New Files
+
+| File | Description |
+|---|---|
+| `app/src/main/res/mipmap-mdpi/ic_launcher.png` | Legacy icon 48×48 px. |
+| `app/src/main/res/mipmap-hdpi/ic_launcher.png` | Legacy icon 72×72 px. |
+| `app/src/main/res/mipmap-xhdpi/ic_launcher.png` | Legacy icon 96×96 px. |
+| `app/src/main/res/mipmap-xxhdpi/ic_launcher.png` | Legacy icon 144×144 px. |
+| `app/src/main/res/mipmap-xxxhdpi/ic_launcher.png` | Legacy icon 192×192 px. |
+| `app/src/main/res/drawable-nodpi/ic_launcher_bitmap.png` | Full-res source image for adaptive icon foreground and splash. |
+| `app/src/main/res/drawable-nodpi/splash_logo.png` | Splash screen image: logo trimmed to content, composited on magenta `#cf62a9` background. Generated via Python PIL. |
+| `app/src/main/res/drawable/ic_launcher_background.xml` | Solid magenta `#cf62a9` shape drawable for adaptive icon background. |
+| `app/src/main/res/drawable/ic_launcher_foreground.xml` | `<inset>` with 12dp margins pointing to `@drawable/ic_launcher_bitmap`. Scales logo to fit within safe zone. |
+| `app/src/main/res/drawable/splash_background.xml` | `<bitmap>` drawable referencing `@drawable/splash_logo` with `gravity="fill"`. |
+| `app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml` | Adaptive icon with background, foreground, and monochrome layers. |
+| `app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml` | Same adaptive icon for round icon launchers. |
+| `app/src/main/res/values/themes.xml` | `Theme.pLauncher.Splash` with `windowBackground` set to `@drawable/splash_background` (drawable, not color, to avoid force-dark inversion). |
+| `app/src/main/res/values-v29/themes.xml` | Same splash theme with `android:forceDarkAllowed="false"` to prevent Android from inverting the magenta background to black under system dark mode. |
+
+#### New Script
+
+| File | Description |
+|---|---|
+| `generate_icon.sh` | POSIX-compliant shell script (`#!/bin/sh`) that takes a square PNG with transparent background and generates all icon resources. Uses ImageMagick for mipmap resizing and Python PIL for splash screen generation. |
+
+### Key Implementation Details
+
+**Circular reference fix**: The original plan had `ic_launcher_foreground.xml` reference `@mipmap/ic_launcher`. On API 26+, `@mipmap/ic_launcher` resolves to the adaptive icon XML itself, creating a circular reference. Android silently falls back to a default icon. Fixed by copying the source image to `drawable-nodpi/ic_launcher_bitmap.png` and having the foreground reference `@drawable/ic_launcher_bitmap` instead.
+
+**Foreground inset sizing**: The adaptive icon canvas is 108 dp with a 66 dp safe zone (21 dp margin). Testing showed:
+- 21dp inset (plan default): Logo appeared too small compared to other apps
+- 0dp inset (no inset): Logo edges clipped by launcher masks
+- 12dp inset (final): Good compromise — logo fills ~84/108 dp of canvas while avoiding edge clipping
+
+**Splash screen force-dark fix**: Android API 29+ applies "force dark" to light themes, inverting colors. A solid magenta `#cf62a9` as `windowBackground` was inverted to black. Two-layer fix:
+1. Use a drawable (`@drawable/splash_background`) instead of a raw color — drawables are not force-dark inverted
+2. Set `android:forceDarkAllowed="false"` in `values-v29/themes.xml` to disable force-dark entirely for the splash theme
+
+**Splash logo generation** (Python PIL): The source image has the logo on a transparent background. The script:
+1. Opens the source PNG and converts to RGBA
+2. Calls `getbbox()` to find the bounding box of non-transparent pixels
+3. Crops to the bounding box, removing transparent margins
+4. Creates a new image the same size as the cropped logo, filled with magenta `#cf62a9`
+5. Pastes the cropped logo using its alpha channel as a mask
+6. Saves as `splash_logo.png`
+
+The splash drawable uses `android:gravity="fill"` which scales the image to fill the screen. Since the image contains only the logo on magenta (no extra padding), Android scales it proportionally.
+
+**Generation script** (`generate_icon.sh`):
+```sh
+#!/bin/sh
+set -e
+
+# Verify source is square PNG
+SIZE=$(identify -format "%wx%h" "$SOURCE")
+W=$(identify -format "%w" "$SOURCE")
+H=$(identify -format "%h" "$SOURCE")
+if [ "$W" != "$H" ]; then
+    printf "Error: expected square PNG, got %s: %s\n" "$SIZE" "$SOURCE"
+    exit 1
+fi
+
+# Generate legacy mipmap icons (ImageMagick Lanczos resampling)
+convert "$SOURCE" -resize 48x48   "${RES_DIR}/mipmap-mdpi/ic_launcher.png"
+# ... (72, 96, 144, 192)
+
+# Copy full-res foreground
+cp "$SOURCE" "${RES_DIR}/drawable-nodpi/ic_launcher_bitmap.png"
+
+# Generate splash screen (Python PIL)
+python3 -c "
+from PIL import Image
+img = Image.open('${SOURCE}').convert('RGBA')
+coords = img.getbbox()
+trimmed = img.crop(coords) if coords else img
+lw, lh = trimmed.size
+out = Image.new('RGBA', (lw, lh), (207, 98, 169, 255))
+alpha = trimmed.split()[3]
+out.paste(trimmed, (0, 0), alpha)
+out.save('${RES_DIR}/drawable-nodpi/splash_logo.png', 'PNG')
+"
+
+# Write XML resources (background, foreground, adaptive icons, splash, themes)
+```
+
+### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Android Manifest | 1 | ~4 (icon attributes, theme changes) |
+| Mipmap PNGs | 5 | New (generated) |
+| Drawable PNGs | 2 | New (foreground copy, splash) |
+| Drawable XML | 3 | New (background, foreground, splash) |
+| Mipmap XML | 2 | New (adaptive icon, round) |
+| Theme XML | 2 | New (values, values-v29) |
+| Script | 1 | ~140 (generate_icon.sh) |
+| **Total** | **16** | **~144** |
+
+### Build Status
+
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+### Design Decisions
+
+**Foreground as drawable, not mipmap reference**: Avoids circular reference on API 26+. The source image is stored in `drawable-nodpi/` (no density scaling) so Android uses it at full resolution and scales to the adaptive icon canvas.
+
+**Inset over bitmap for foreground**: `<inset>` with 12dp margins ensures the logo fits within the adaptive icon safe zone across all launcher mask shapes (circle, squircle, teardrop). Tested values: 0dp clips edges, 21dp too small, 12dp balanced.
+
+**Splash uses drawable, not color**: Android's force-dark feature inverts solid colors in `windowBackground` under system dark mode (magenta → black). Using a bitmap drawable avoids this inversion. Combined with `forceDarkAllowed=false` on API 29+ for reliability.
+
+**Splash logo trimmed to content**: Instead of a fixed-size canvas with padding, the logo is trimmed to its bounding box and composited on magenta at exact size. The `gravity="fill"` in the splash drawable scales it to the screen. This keeps the splash image small while ensuring the logo is always visible.
+
+**POSIX-compliant script**: Uses `#!/bin/sh`, `[` instead of `[[`, `printf` instead of `echo`, `set -e` instead of `set -euo pipefail`. The Python splash generation is the only non-POSIX dependency (PIL/Pillow), required because ImageMagick cannot reliably composite alpha-transparent logos onto colored backgrounds with matching dimensions.
+
+**Source image preserved**: The original `pLauncher_big.png` stays in the project root. The script copies and transforms it as needed. Users can regenerate all resources at any time by running `./generate_icon.sh pLauncher_big.png`.
+
+**Unchanged**: Pebble watch app, communication protocol, existing Android app features. All existing functionality remains fully operational.
