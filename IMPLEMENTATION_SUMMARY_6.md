@@ -258,12 +258,13 @@ After the fix, `s_loading` follows a clean state machine:
 
 ### Overview
 
-Added a proper app icon to the Android companion app (`apk/`) using a user-provided PNG image. Implemented legacy mipmap bitmaps (API < 26), adaptive icons with background/foreground/monochrome layers (API 26+), and a branded splash screen with magenta background and logo. Created a POSIX-compliant generation script (`generate_icon.sh`) that accepts any square PNG with transparent background and produces all required resources.
+Added a proper app icon to the Android companion app (`apk/`). Implemented legacy mipmap bitmaps (API < 26), adaptive icons with background/foreground/monochrome layers (API 26+), and a branded splash screen with magenta background and logo. Created a POSIX-compliant generation script (`generate_icon.sh`) that accepts a `.kra` (Krita) or `.png` file as input, exports the PNG if needed, and produces all required resources. The PNG output is always written to `apk/pLauncher.png`.
 
 ### Analysis
 
 - **Previous state**: The Android project had no icon configured. `AndroidManifest.xml` had no `android:icon` or `android:roundIcon` in `<application>`. `res/` had no `mipmap-*` directories. `res/drawable/` was empty.
-- **Source image**: `pLauncher_big.png`, PNG 1400×1400 RGBA, with transparent background. The logo contains a stylized "L" (white with gradient) and "p" (cyan `#58cef8` with pink `#e4adcd` crossbar), both with black outlines. Colors used: `#cf62a9` (magenta), `#e4adcd` (light pink), `#58cef8` (cyan), `#ffffff` (white).
+- **Source image**: `pLauncher.kra`, Krita project file (zip archive), 1400×1400, RGBA16, sRGB, 12 layers (some hidden). The logo contains a stylized "L" (white with gradient) and "p" (cyan `#58cef8` with pink `#e4adcd` crossbar), both with black outlines. Colors used: `#cf62a9` (magenta), `#e4adcd` (light pink), `#58cef8` (cyan), `#ffffff` (white).
+- **Krita export**: `krita --export --export-filename <out.png> <in.kra>` flattens all visible layers to PNG (1400×1400, 16-bit sRGB). Requires a display (X11/Wayland); `QT_QPA_PLATFORM=offscreen` does not work with Krita 5.3 on this machine.
 - **Target SDK**: minSdk 24, targetSdk 36. Required supporting both legacy icons (API < 26) and adaptive icons (API 26+).
 - **Adaptive icon specs**: Canvas 108×108 dp, safe zone 66×66 dp (21 dp margin per side for masking). Required layers: `background` + `foreground` + `monochrome` (Android 13+ theming).
 
@@ -294,11 +295,11 @@ Added a proper app icon to the Android companion app (`apk/`) using a user-provi
 | `app/src/main/res/values/themes.xml` | `Theme.pLauncher.Splash` with `windowBackground` set to `@drawable/splash_background` (drawable, not color, to avoid force-dark inversion). |
 | `app/src/main/res/values-v29/themes.xml` | Same splash theme with `android:forceDarkAllowed="false"` to prevent Android from inverting the magenta background to black under system dark mode. |
 
-#### New Script
+#### Script
 
 | File | Description |
 |---|---|
-| `generate_icon.sh` | POSIX-compliant shell script (`#!/bin/sh`) that takes a square PNG with transparent background and generates all icon resources. Uses ImageMagick for mipmap resizing and Python PIL for splash screen generation. |
+| `generate_icon.sh` | POSIX-compliant shell script (`#!/bin/sh`) that accepts `.kra` or `.png` input. A `.kra` file is exported to PNG via `krita --export`; a `.png` is copied directly. The PNG output is always written to `apk/pLauncher.png`. Uses ImageMagick for mipmap resizing and Python PIL for splash screen generation. Other formats are rejected with an error. |
 
 ### Key Implementation Details
 
@@ -323,41 +324,41 @@ Added a proper app icon to the Android companion app (`apk/`) using a user-provi
 
 The splash drawable uses `android:gravity="fill"` which scales the image to fill the screen. Since the image contains only the logo on magenta (no extra padding), Android scales it proportionally.
 
+**KRA to PNG export**: The script detects the input format by file extension:
+- `.kra`: Checks `krita` is in PATH, runs `krita --export --export-filename <apk/pLauncher.png> <source.kra>` with output suppressed (Krita prints warnings to stderr). Requires display (X11/Wayland available). `QT_QPA_PLATFORM=offscreen` was tested and fails on Krita 5.3.
+- `.png`: Copies the file to `apk/pLauncher.png` (backward compatible with original usage).
+- Other extensions: Rejected with descriptive error.
+
+After acquisition, the PNG in `apk/pLauncher.png` is validated (square check via `identify`) before the icon generation pipeline proceeds.
+
 **Generation script** (`generate_icon.sh`):
 ```sh
 #!/bin/sh
 set -e
 
-# Verify source is square PNG
+# ... argument check, SCRIPT_DIR, APK_DIR, RES_DIR ...
+
+# Format detection and source acquisition
+PNG_OUTPUT="${APK_DIR}/pLauncher.png"
+case "${SOURCE##*.}" in
+    kra)
+        command -v krita >/dev/null 2>&1 || { printf "Error: krita not found in PATH\n"; exit 1; }
+        krita --export --export-filename "$PNG_OUTPUT" "$SOURCE" >/dev/null 2>&1 || exit 1
+        SOURCE="$PNG_OUTPUT"
+        ;;
+    png)
+        cp "$SOURCE" "$PNG_OUTPUT"
+        SOURCE="$PNG_OUTPUT"
+        ;;
+    *)
+        printf "Error: unsupported format '%s'. Expected .kra or .png\n" "${SOURCE##*.}"
+        exit 1
+        ;;
+esac
+
+# Verify source is square PNG (runs on the acquired PNG)
 SIZE=$(identify -format "%wx%h" "$SOURCE")
-W=$(identify -format "%w" "$SOURCE")
-H=$(identify -format "%h" "$SOURCE")
-if [ "$W" != "$H" ]; then
-    printf "Error: expected square PNG, got %s: %s\n" "$SIZE" "$SOURCE"
-    exit 1
-fi
-
-# Generate legacy mipmap icons (ImageMagick Lanczos resampling)
-convert "$SOURCE" -resize 48x48   "${RES_DIR}/mipmap-mdpi/ic_launcher.png"
-# ... (72, 96, 144, 192)
-
-# Copy full-res foreground
-cp "$SOURCE" "${RES_DIR}/drawable-nodpi/ic_launcher_bitmap.png"
-
-# Generate splash screen (Python PIL)
-python3 -c "
-from PIL import Image
-img = Image.open('${SOURCE}').convert('RGBA')
-coords = img.getbbox()
-trimmed = img.crop(coords) if coords else img
-lw, lh = trimmed.size
-out = Image.new('RGBA', (lw, lh), (207, 98, 169, 255))
-alpha = trimmed.split()[3]
-out.paste(trimmed, (0, 0), alpha)
-out.save('${RES_DIR}/drawable-nodpi/splash_logo.png', 'PNG')
-"
-
-# Write XML resources (background, foreground, adaptive icons, splash, themes)
+# ... square check, mipmap generation, XML resources ...
 ```
 
 ### Code Statistics
@@ -370,14 +371,23 @@ out.save('${RES_DIR}/drawable-nodpi/splash_logo.png', 'PNG')
 | Drawable XML | 3 | New (background, foreground, splash) |
 | Mipmap XML | 2 | New (adaptive icon, round) |
 | Theme XML | 2 | New (values, values-v29) |
-| Script | 1 | ~140 (generate_icon.sh) |
-| **Total** | **16** | **~144** |
+| Script | 1 | ~200 (generate_icon.sh, updated with KRA export) |
+| **Total** | **16** | **~204** |
 
 ### Build Status
 
 - Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+- Script: `bash -n` passes; `.kra` and `.png` inputs both tested successfully
 
 ### Design Decisions
+
+**KRA as source of truth**: The `.kra` Krita project file is the authoritative source for the icon. Editing the `.kra` in Krita and re-running `./generate_icon.sh pLauncher.kra` produces a fresh PNG and regenerates all Android resources. This eliminates the manual export step.
+
+**Backward compatibility**: The script accepts both `.kra` and `.png` inputs. Passing a `.png` maintains the original workflow for users who prefer to work with exported PNGs directly.
+
+**Krita display requirement**: `QT_QPA_PLATFORM=offscreen` does not work with Krita 5.3 on Linux (BadWindow X error). The script runs Krita without offscreen mode, requiring an available X11/Wayland display. Krita's stderr output (style warnings, ICC profile warnings, tile leak warnings) is suppressed with `>/dev/null 2>&1`.
+
+**Fixed output path**: The PNG is always written to `apk/pLauncher.png` regardless of input format. This ensures the Android project references a stable location, and the generation script can always find the PNG for downstream processing.
 
 **Foreground as drawable, not mipmap reference**: Avoids circular reference on API 26+. The source image is stored in `drawable-nodpi/` (no density scaling) so Android uses it at full resolution and scales to the adaptive icon canvas.
 
@@ -389,6 +399,6 @@ out.save('${RES_DIR}/drawable-nodpi/splash_logo.png', 'PNG')
 
 **POSIX-compliant script**: Uses `#!/bin/sh`, `[` instead of `[[`, `printf` instead of `echo`, `set -e` instead of `set -euo pipefail`. The Python splash generation is the only non-POSIX dependency (PIL/Pillow), required because ImageMagick cannot reliably composite alpha-transparent logos onto colored backgrounds with matching dimensions.
 
-**Source image preserved**: The original `pLauncher_big.png` stays in the project root. The script copies and transforms it as needed. Users can regenerate all resources at any time by running `./generate_icon.sh pLauncher_big.png`.
+**Source image preserved**: The original `pLauncher.kra` stays in the project root. The script exports and transforms it as needed. Users regenerate all resources by running `./generate_icon.sh pLauncher.kra`.
 
 **Unchanged**: Pebble watch app, communication protocol, existing Android app features. All existing functionality remains fully operational.
