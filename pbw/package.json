@@ -33,7 +33,7 @@
           "type": "bitmap",
           "name": "APP_ICON",
           "file": "images/app_launcher_icon.png",
-          "aapl52png": "images/app_launcher_icon.png"
+          "menuIcon": true
         },
         {
           "type": "bitmap",
