@@ -67,13 +67,37 @@ dependencies {
 
 val pbwDir = rootProject.projectDir.parentFile?.resolve("pbw") ?: file("../pbw")
 val watchPbw = pbwDir.resolve("build/pbw.pbw")
+val generateIconScript = rootProject.projectDir.parentFile?.resolve("generate_icon.sh") ?: file("../generate_icon.sh")
+
+val exportPbwIcon = tasks.register<Exec>("exportPbwIcon") {
+    workingDir = rootProject.projectDir.parentFile
+    commandLine = listOf(generateIconScript.toString(), "pbw/pLauncher_pbw.kra", "--pbw")
+    isIgnoreExitValue = true
+    standardOutput = System.out
+    errorOutput = System.err
+
+    doLast {
+        val exitCode = executionResult.get().exitValue
+        if (exitCode != 0) {
+            logger.warn("WARNING: exportPbwIcon failed (exit code $exitCode). The watchapp menu icon will not be updated.")
+        }
+    }
+}
 
 val buildWatchapp = tasks.register<Exec>("buildWatchapp") {
+    dependsOn(exportPbwIcon)
     workingDir = pbwDir
     commandLine = listOf("pebble", "build")
     isIgnoreExitValue = true
     standardOutput = System.out
     errorOutput = System.err
+
+    doLast {
+        val exitCode = executionResult.get().exitValue
+        if (exitCode != 0) {
+            logger.warn("WARNING: buildWatchapp failed (exit code $exitCode). The bundled watchapp will be stale or missing.")
+        }
+    }
 }
 
 val bundleWatchPbw = tasks.register<Copy>("bundleWatchPbw") {
@@ -81,12 +105,22 @@ val bundleWatchPbw = tasks.register<Copy>("bundleWatchPbw") {
     into(layout.projectDirectory.dir("src/main/assets"))
     rename { "plauncher.pbw" }
     dependsOn(buildWatchapp)
-    onlyIf { watchPbw.exists() }
+    onlyIf {
+        if (!watchPbw.exists()) {
+            logger.warn("WARNING: bundleWatchPbw skipped — pbw.pbw not found. Watchapp not bundled.")
+        }
+        watchPbw.exists()
+    }
 }
 
 val generatePbwInfo = tasks.register("generatePbwInfo") {
     dependsOn(buildWatchapp)
-    onlyIf { watchPbw.exists() }
+    onlyIf {
+        if (!watchPbw.exists()) {
+            logger.warn("WARNING: generatePbwInfo skipped — pbw.pbw not found. PBW info will not be generated.")
+        }
+        watchPbw.exists()
+    }
 
     doLast {
         val appinfoFile = pbwDir.resolve("build/appinfo.json")
