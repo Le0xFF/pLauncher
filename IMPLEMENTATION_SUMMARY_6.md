@@ -402,3 +402,154 @@ SIZE=$(identify -format "%wx%h" "$SOURCE")
 **Source image preserved**: The original `pLauncher.kra` stays in the project root. The script exports and transforms it as needed. Users regenerate all resources by running `./generate_icon.sh pLauncher.kra`.
 
 **Unchanged**: Pebble watch app, communication protocol, existing Android app features. All existing functionality remains fully operational.
+
+## #29 — Watchapp Launcher Icon and Build Integration
+
+### Overview
+
+Added a proper launcher icon to the Pebble watchapp (`pbw/`) that appears in the watch's app menu. Replaced the 1×1 grey placeholder with a handcrafted 25×25 pixel art icon drawn directly at target size. Refactored `generate_icon.sh` to support two independent icon sources (`apk/pLauncher_apk.kra` for Android, `pbw/pLauncher_pbw.kra` for Pebble), each with its own target flag (`--apk` / `--pbw`). Integrated the Pebble icon export into the Android Gradle build pipeline, so the APK build automatically exports the icon, builds the watchapp, and bundles the `.pbw` — with warnings for any failed step instead of blocking the APK build.
+
+### Analysis
+
+- **Previous state**: The watchapp had `APP_ICON` referencing a 1×1 grey placeholder PNG in `images/app_launcher_icon.png`. The `package.json` used `"aapl52png": "images/app_launcher_icon.png"` which is not recognized by SDK 4.17. No `"menuIcon": true` was set, so the icon did not appear in the launcher.
+- **Icon generation attempt**: The initial approach used `generate_icon.sh` to trim the 1400×1400 logo (PIL `getbbox()`) and resize to 25×25 with LANCZOS. The result appeared small with blurry edges due to anti-aliasing artifacts on Pebble's 1-bit/8-bit display.
+- **Pixel art approach**: Pebble launcher icons render best as pure pixel art with sharp edges (no anti-aliasing), similar to the PebbleNotificationCenter2 reference icon (25×25, greyscale, 2 colors). The handcrafted icon `pLauncher_pbw.kra` is a Krita project designed at 25×25 with the logo's distinctive "L" and "p" characters.
+- **Two KRA files**: The project now has two separate KRA sources:
+  - `apk/pLauncher_apk.kra` (1400×1400, full-color logo) → Android companion app assets
+  - `pbw/pLauncher_pbw.kra` (25×25, pixel art) → Pebble watchapp menu icon
+- **Script refactoring**: The original `generate_icon.sh` accepted a single source argument and always generated Android assets. Refactored to accept `<source> --apk` or `<source> --pbw`, distinguishing which pipeline to run.
+- **No intermediate PNGs**: Both KRA exports write directly into their destination resource directories, avoiding PNG files in the project root that could conflict with Android resource naming rules.
+- **Gradle integration**: The APK build (`./gradlew assembleDebug`) needs to include the watchapp build. Added `exportPbwIcon` task that runs `generate_icon.sh --pbw`, followed by `buildWatchapp` (`pebble build`), then `bundleWatchPbw` and `generatePbwInfo`. All use `isIgnoreExitValue = true` with `logger.warn` for failures, so the APK always compiles even if Pebble steps fail.
+
+### Watch App (`pbw/`) — ~3 files changed
+
+#### Modified Files
+
+| File | Changes |
+|---|---|
+| `pLauncher_pbw.kra` (new) | Krita project file, 25×25 canvas, handcrafted pixel art icon with "L" and "p" logo elements. |
+| `resources/images/app_launcher_icon.png` (new) | 25×25 PNG exported from `pLauncher_pbw.kra`. Replaces 1×1 grey placeholder. |
+| `package.json` | Replaced `"aapl52png": "images/app_launcher_icon.png"` with `"menuIcon": true` in `APP_ICON` resource entry. |
+
+### Script (`generate_icon.sh`) — Rewritten
+
+#### Changes
+
+| Aspect | Before | After |
+|---|---|---|
+| Arguments | `<source_kra_or_png>` (single) | `<source_kra_or_png> --apk\|--pbw` (two args) |
+| APK source | Any KRA/PNG passed as arg | `apk/pLauncher_apk.kra` → PNG in `apk/app/src/main/res/drawable-nodpi/_src/` |
+| PBW source | None (copied static `pLauncher_pbw.png`) | `pbw/pLauncher_pbw.kra` → PNG in `pbw/resources/images/app_launcher_icon.png` |
+| Intermediate PNGs | `apk/pLauncher.png` in project root | None. APK PNG in `_src/` subdirectory (ignored by Gradle). PBW PNG in `resources/images/`. |
+| KRA export | Single export to `apk/pLauncher.png` | Two separate exports per target, each to its own destination |
+| PNG same-file fix | `realpath` comparison for APK copy | Same approach for both targets |
+
+#### Usage
+
+```sh
+# Generate Android companion app icons from KRA
+./generate_icon.sh apk/pLauncher_apk.kra --apk
+
+# Generate Pebble watchapp menu icon from KRA
+./generate_icon.sh pbw/pLauncher_pbw.kra --pbw
+
+# Both also accept .png directly
+./generate_icon.sh some_logo.png --apk
+./generate_icon.sh some_icon.png --pbw
+```
+
+#### APK PNG storage
+
+The APK's exported PNG is written to `apk/app/src/main/res/drawable-nodpi/_src/pLauncher_apk.png`. The `_src/` subdirectory ensures Gradle does not treat the intermediate PNG as a resource (file names with uppercase letters like `L` are invalid for Android resource identifiers). The PNG is consumed by the script's downstream processing (mipmaps, foreground copy, splash) and is not referenced by the Android project directly.
+
+### Android Build (`apk/app/build.gradle.kts`) — Watchapp integration
+
+#### New Task: `exportPbwIcon`
+
+```kotlin
+val exportPbwIcon = tasks.register<Exec>("exportPbwIcon") {
+    workingDir = rootProject.projectDir.parentFile
+    commandLine = listOf(generateIconScript.toString(), "pbw/pLauncher_pbw.kra", "--pbw")
+    isIgnoreExitValue = true
+    standardOutput = System.out
+    errorOutput = System.err
+
+    doLast {
+        val exitCode = executionResult.get().exitValue
+        if (exitCode != 0) {
+            logger.warn("WARNING: exportPbwIcon failed (exit code $exitCode). The watchapp menu icon will not be updated.")
+        }
+    }
+}
+```
+
+Runs `generate_icon.sh --pbw` to export the Pebble icon from the KRA before `pebble build`. Failure logs a warning but does not block the build.
+
+#### Modified Task: `buildWatchapp`
+
+Added `dependsOn(exportPbwIcon)` so the icon is always fresh before building. Added `doLast` with `executionResult.get().exitValue` check for failure warning. Uses `isIgnoreExitValue = true` so APK build continues on Pebble build failure.
+
+#### Modified Tasks: `bundleWatchPbw` / `generatePbwInfo`
+
+Both now include `logger.warn` inside `onlyIf` when `pbw.pbw` does not exist, making skipped steps visible in the build output.
+
+#### Build Flow
+
+```
+assembleDebug
+  └── mergeDebugAssets
+        ├── bundleWatchPbw
+        │     └── buildWatchapp (isIgnoreExitValue=true, warns on failure)
+        │           └── exportPbwIcon (isIgnoreExitValue=true, warns on failure)
+        └── generatePbwInfo
+              └── buildWatchapp (shared dependency)
+```
+
+Each step reports warnings on failure. The APK compiles regardless.
+
+### Key Implementation Details
+
+**`menuIcon` vs `aapl52png`**: The `"aapl52png"` attribute is from Pebble SDK v2 (Apple Watch style). SDK 4.17 does not recognize it. `"menuIcon": true` is the correct attribute for Re-Pebble SDK to register the icon in the watch's app menu/launcher.
+
+**Pixel art over resize**: Resizing a 1400×1400 logo to 25×25 with LANCZOS produces anti-aliased edges that appear blurry on Pebble's low-resolution display. Handcrafting the icon at 25×25 in Krita produces sharp pixel-perfect edges matching the PebbleNotificationCenter2 reference style.
+
+**`getbbox()` trim no longer used for PBW**: The initial approach used PIL's `getbbox()` to crop transparent margins before resizing. This approach was abandoned in favor of the handcrafted icon. The `getbbox()` trim is still used for the Android splash screen (log remains in `--apk` path).
+
+**KRA export destination**: `krita --export --export-filename <dest> <source.kra>` writes the flattened PNG to `<dest>`. For `--pbw`, the destination is `pbw/resources/images/app_launcher_icon.png` (directly where Pebble SDK expects it). For `--apk`, the destination is `apk/app/src/main/res/drawable-nodpi/_src/pLauncher_apk.png` (intermediate, consumed by script).
+
+**`onlyIf` with warning**: Gradle's `onlyIf` predicate is evaluated before task execution. Placing `logger.warn` inside the predicate ensures the warning is printed even when the task is skipped (unlike `doFirst`, which does not run when `onlyIf` returns false).
+
+### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App | 2 | ~3 (package.json replacement) |
+| Resources | 1 | 1 PNG new (25×25 handcrafted) |
+| Script | 1 | ~150 (complete rewrite for dual-target) |
+| Gradle | 1 | ~30 (exportPbwIcon task, warnings, dependencies) |
+| **Total** | **5** | **~183** |
+
+### Build Status
+
+- Watch app: `pebble build` — BUILD SUCCESSFUL (basalt + emery)
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL (includes watchapp build)
+- Script: `bash -n` passes; `--apk` and `--pbw` targets both tested
+- Resource size: 4,643 bytes total (icon contributes ~222 B)
+- Basalt: 29,373 B RAM / 64 KB, 36,163 B free heap
+- Emery: 29,373 B RAM / 128 KB, 101,699 B free heap
+
+### Design Decisions
+
+**Two KRA files over one**: The Android logo (1400×1400, full-color, gradient) and Pebble icon (25×25, pixel art, monochrome) have fundamentally different designs. Separate KRA files allow each to be edited independently in Krita without affecting the other.
+
+**`_src/` subdirectory for APK PNG**: Android resource names must be lowercase with underscores only. The exported APK PNG filename (`pLauncher_apk.png`) contains uppercase letters, causing Gradle resource merge failures. Storing it in a `_src/` subdirectory within `drawable-nodpi/` isolates it from Android's resource scanner while keeping it accessible to the script.
+
+**Gradle task chain over manual steps**: Integrating the Pebble icon export and build into Gradle ensures the APK always bundles a fresh watchapp. The `isIgnoreExitValue = true` with warnings ensures the APK build is resilient — if Pebble SDK is unavailable or the build fails, the APK still compiles with the previous `.pbw` (or without it), with clear warnings in the output.
+
+**`executionResult.get().exitValue`**: Gradle's Kotlin DSL does not expose `exitValue` directly on `Exec` tasks. The `executionResult` property (a `Provider<ExecResult>`) must be accessed via `.get().exitValue` inside `doLast` (after execution). This pattern correctly retrieves the exit code after `isIgnoreExitValue = true` prevents the task from throwing.
+
+**`onlyIf` warning placement**: Placing `logger.warn` inside the `onlyIf` predicate (rather than `doFirst`) ensures warnings appear when tasks are skipped due to missing files. The predicate both logs the warning and returns the boolean condition, so the warning fires exactly when `onlyIf` evaluates to false.
+
+**`generate_icon.sh` target flags**: Using `--apk` and `--pbw` flags (rather than separate scripts) keeps maintenance in one file while clearly separating concerns. The flags determine output paths, validation, and downstream processing.
+
+**Unchanged**: Android icon assets (mipmaps, adaptive, splash), watchapp UI, packet protocol, companion app functionality. All existing features remain fully operational.
