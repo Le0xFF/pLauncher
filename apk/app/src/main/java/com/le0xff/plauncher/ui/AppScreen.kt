@@ -199,9 +199,9 @@ fun AppScreen(
                 .padding(16.dp)
                 .widthIn(min = 100.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.button_add_app))
-                Text(" | ")
+                Text(stringResource(R.string.separator_pipe))
                 Text("$appCount/$maxApps")
             }
         }

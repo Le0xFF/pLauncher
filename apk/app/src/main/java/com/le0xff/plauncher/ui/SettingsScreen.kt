@@ -383,7 +383,7 @@ fun SettingsScreen(
             val pbwInfo = remember { PbwInstaller.getInfo(context) }
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "Version: ",
+                    text = stringResource(R.string.watchapp_label_version),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.widthIn(min = 60.dp)
@@ -399,7 +399,7 @@ fun SettingsScreen(
             }
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "MD5:     ",
+                    text = stringResource(R.string.watchapp_label_md5),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.widthIn(min = 60.dp)

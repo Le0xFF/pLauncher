@@ -129,6 +129,13 @@ static void cancel_auto_launch(void) {
     s_auto_launch_pending = false;
 }
 
+static void refresh_auto_launch_timer(void) {
+    if (s_auto_launch_pending) {
+        cancel_auto_launch();
+        schedule_auto_launch();
+    }
+}
+
 static void handle_auto_launch_pref(DictionaryIterator* iter) {
     Tuple* t = dict_find(iter, KEY_AUTO_LAUNCH_ENABLED);
     if (t) {
@@ -136,10 +143,7 @@ static void handle_auto_launch_pref(DictionaryIterator* iter) {
         save_auto_launch_pref(enabled);
     }
 
-    if (s_auto_launch_pending) {
-        cancel_auto_launch();
-        schedule_auto_launch();
-    }
+    refresh_auto_launch_timer();
 }
 
 static void handle_auto_launch_target(DictionaryIterator* iter) {
@@ -149,10 +153,7 @@ static void handle_auto_launch_target(DictionaryIterator* iter) {
         save_auto_launch_target(index);
     }
 
-    if (s_auto_launch_pending) {
-        cancel_auto_launch();
-        schedule_auto_launch();
-    }
+    refresh_auto_launch_timer();
 }
 
 static void handle_auto_close_pref(DictionaryIterator* iter) {
@@ -202,12 +203,14 @@ static void handle_app_list(DictionaryIterator* iter) {
     Tuple* idTuple = dict_find(iter, KEY_TRANSFER_ID);
     uint8_t transfer_id = idTuple ? idTuple->value->uint8 : 0;
 
-    if (transfer_id < s_current_transfer_id) {
+    int16_t diff = (int16_t)((int8_t)s_current_transfer_id - (int8_t)transfer_id);
+
+    if (diff > 0) {
         APP_LOG(APP_LOG_LEVEL_INFO, "Discarding obsolete chunk (id=%d, current=%d)", transfer_id, s_current_transfer_id);
         return;
     }
 
-    if (transfer_id > s_current_transfer_id) {
+    if (diff < 0) {
         s_current_transfer_id = transfer_id;
         s_loading = true;
         app_list_clear();

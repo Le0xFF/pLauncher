@@ -24,9 +24,7 @@ class PebbleSenderHelper(context: Context) {
             0u to PebbleDictionaryItem.UInt8(10),
             1u to PebbleDictionaryItem.UInt16(1)
         )
-        val watches = watch?.let { listOf(it) }
-        val result = sender.sendDataToPebble(WATCH_APP_UUID, dict, watches)
-        return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
+        return sendPacket(dict, watch)
     }
 
     suspend fun sendAppList(apps: List<LaunchApp>, watch: WatchIdentifier?): TransmissionResult {
@@ -40,9 +38,7 @@ class PebbleSenderHelper(context: Context) {
                 6u to PebbleDictionaryItem.UInt8(currentTransferId),
                 9u to PebbleDictionaryItem.UInt8(1)
             )
-            val watches = watch?.let { listOf(it) }
-            val result = sender.sendDataToPebble(WATCH_APP_UUID, dict, watches)
-            return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
+            return sendPacket(dict, watch)
         }
 
         return sendAppListChunks(apps, watch, currentTransferId)
@@ -87,13 +83,18 @@ class PebbleSenderHelper(context: Context) {
         return lastResult
     }
 
+    private suspend fun sendPacket(dict: PebbleDictionary, watch: WatchIdentifier? = null): TransmissionResult {
+        val watches = watch?.let { listOf(it) }
+        val result = sender.sendDataToPebble(WATCH_APP_UUID, dict, watches)
+        return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
+    }
+
     suspend fun sendVibrationPref(pref: UInt): TransmissionResult {
         val dict: PebbleDictionary = mapOf(
             0u to PebbleDictionaryItem.UInt8(13),
             11u to PebbleDictionaryItem.UInt8(pref.toInt())
         )
-        val result = sender.sendDataToPebble(WATCH_APP_UUID, dict, null)
-        return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
+        return sendPacket(dict)
     }
 
     suspend fun sendAutoClosePref(enabled: UInt): TransmissionResult {
@@ -101,8 +102,7 @@ class PebbleSenderHelper(context: Context) {
             0u to PebbleDictionaryItem.UInt8(14),
             12u to PebbleDictionaryItem.UInt8(if (enabled == 1u) 1 else 0)
         )
-        val result = sender.sendDataToPebble(WATCH_APP_UUID, dict, null)
-        return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
+        return sendPacket(dict)
     }
 
     suspend fun sendAutoLaunchPref(enabled: UInt): TransmissionResult {
@@ -110,8 +110,7 @@ class PebbleSenderHelper(context: Context) {
             0u to PebbleDictionaryItem.UInt8(15),
             13u to PebbleDictionaryItem.UInt8(if (enabled == 1u) 1 else 0)
         )
-        val result = sender.sendDataToPebble(WATCH_APP_UUID, dict, null)
-        return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
+        return sendPacket(dict)
     }
 
     suspend fun sendAutoLaunchTarget(index: UInt): TransmissionResult {
@@ -119,8 +118,7 @@ class PebbleSenderHelper(context: Context) {
             0u to PebbleDictionaryItem.UInt8(16),
             14u to PebbleDictionaryItem.UInt8(index.toInt())
         )
-        val result = sender.sendDataToPebble(WATCH_APP_UUID, dict, null)
-        return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
+        return sendPacket(dict)
     }
 
     suspend fun sendLaunchConfirm(success: Boolean): TransmissionResult {
@@ -128,8 +126,7 @@ class PebbleSenderHelper(context: Context) {
             0u to PebbleDictionaryItem.UInt8(12),
             10u to PebbleDictionaryItem.UInt8(if (success) 1 else 0)
         )
-        val result = sender.sendDataToPebble(WATCH_APP_UUID, dict, null)
-        return result?.values?.firstOrNull() ?: TransmissionResult.FailedTimeout
+        return sendPacket(dict)
     }
 
     fun close() {

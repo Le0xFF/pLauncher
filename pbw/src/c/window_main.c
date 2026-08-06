@@ -21,6 +21,13 @@ static GRect s_screen_bounds;
 static char s_display_buf[APP_NAME_LEN];
 static char s_index_buf[32];
 
+static void calc_text_frame(int *out_x, int *out_width) {
+    int w = s_screen_bounds.size.w;
+    int nav_x = w - (w / LAYOUT_NAV_COL_DIVISOR);
+    *out_width = 2 * nav_x - w - LAYOUT_TEXT_H_MARGIN;
+    *out_x = (w - *out_width) / 2;
+}
+
 static void window_load(Window* window) {
     Layer* window_layer = window_get_root_layer(window);
     GRect bounds = layer_get_bounds(window_layer);
@@ -40,9 +47,9 @@ static void window_load(Window* window) {
     int h = bounds.size.h;
     int y_name = h / 2 - LAYOUT_NAME_V_OFFSET;
 
+    int text_x, text_width;
+    calc_text_frame(&text_x, &text_width);
     int nav_x = w - (w / LAYOUT_NAV_COL_DIVISOR);
-    int text_width = 2 * nav_x - w - LAYOUT_TEXT_H_MARGIN;
-    int text_x = (w - text_width) / 2;
     s_text_layer = text_layer_create(GRect(text_x, y_name, text_width, LAYOUT_NAME_MAX_HEIGHT));
     text_layer_set_text(s_text_layer, "");
     text_layer_set_text_alignment(s_text_layer, GTextAlignmentCenter);
@@ -139,9 +146,8 @@ void window_main_update_display(void) {
         int icon_y = (h - LAYOUT_NAME_FONT_HEIGHT - LAYOUT_ICON_SIZE - LAYOUT_ICON_V_PADDING * 2) / 2;
         layer_set_frame(bitmap_layer_get_layer(s_icon_layer), GRect(icon_x, icon_y, LAYOUT_ICON_SIZE, LAYOUT_ICON_SIZE));
 
-        int nav_x = w - (w / LAYOUT_NAV_COL_DIVISOR);
-        int text_width = 2 * nav_x - w - LAYOUT_TEXT_H_MARGIN;
-        int text_x = (w - text_width) / 2;
+        int text_x, text_width;
+        calc_text_frame(&text_x, &text_width);
         layer_set_frame(text_layer_get_layer(s_text_layer), GRect(text_x, 0, text_width, LAYOUT_NAME_MAX_HEIGHT));
 
         GSize content_size = text_layer_get_content_size(s_text_layer);
@@ -175,12 +181,10 @@ void window_main_update_display(void) {
         layer_set_hidden((Layer *)s_icon_down, false);
         layer_set_hidden((Layer *)s_icon_launch, false);
     } else {
-        int w = s_screen_bounds.size.w;
         int h = s_screen_bounds.size.h;
 
-        int nav_x = w - (w / LAYOUT_NAV_COL_DIVISOR);
-        int text_width = 2 * nav_x - w - LAYOUT_TEXT_H_MARGIN;
-        int text_x = (w - text_width) / 2;
+        int text_x, text_width;
+        calc_text_frame(&text_x, &text_width);
         layer_set_frame(text_layer_get_layer(s_text_layer), GRect(text_x, 0, text_width, h));
 
         text_layer_set_text(s_text_layer, packets_is_loading() ? STR_LOADING_MESSAGE : str_empty_message());
