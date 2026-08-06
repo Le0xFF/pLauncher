@@ -553,3 +553,99 @@ Each step reports warnings on failure. The APK compiles regardless.
 **`generate_icon.sh` target flags**: Using `--apk` and `--pbw` flags (rather than separate scripts) keeps maintenance in one file while clearly separating concerns. The flags determine output paths, validation, and downstream processing.
 
 **Unchanged**: Android icon assets (mipmaps, adaptive, splash), watchapp UI, packet protocol, companion app functionality. All existing features remain fully operational.
+
+## #30 — Audit Finale: Simplifications and Bug Fixes
+
+### Overview
+
+Simplified the existing pLauncher implementation (Android + Pebble) without modifying functionality, while fixing a bug in the transfer ID wrap-around and externalizing hardcoded UI strings. The audit identified 1 real bug, 5 hardcoded UI strings, and 7 opportunities to reduce duplicated code.
+
+### Analysis
+
+The codebase (29 previous steps, 56 commits, ~2800 lines Kotlin + ~768 lines C) was generally well-structured. Seven simplifications reduced duplicated code and improved readability. All changes are non-invasive and preserve observable behavior.
+
+### Bug Fix: Transfer ID Wrap-Around (`pbw/src/c/packets.c`)
+
+**Problem**: `handle_app_list()` used lexical comparison (`<`, `>`) on `uint8_t` transfer IDs. When `s_current_transfer_id` was 255 and a new transfer with `transfer_id = 0` arrived, the condition `0 < 255` evaluated true and the chunk was discarded as "obsolete". The Android app correctly wraps with `transferId = (transferId + 1u) and 0xFFu`, but the Pebble side did not handle wrap in the comparison.
+
+**Fix**: Replaced lexical comparison with modular arithmetic using `int8_t` cast:
+- Obsolete check: `(int16_t)((int8_t)s_current_transfer_id - (int8_t)transfer_id) > 0`
+- New transfer check: `(int16_t)((int8_t)transfer_id - (int8_t)s_current_transfer_id) > 0`
+
+This works because `int8_t` subtraction produces the correct sign for differences within ±127, always true for sequential increments with wrap-around. Verified cases: `current=255, new=0` → new transfer (was the bug), `current=0, new=255` → obsolete, `current=128, new=128` → same transfer.
+
+### Externalized Strings (`apk/`)
+
+**Problem**: Five user-visible strings were hardcoded in Kotlin source files, violating the project rule: "All user-visible strings must be externalized, never hardcoded."
+
+**Fix**: Added five entries to `strings.xml` and replaced each hardcode with `stringResource(R.string.name)`:
+
+| Resource name | Value | Location |
+|---|---|---|
+| `icon_warning` | `\u26A0\uFE0F` (⚠️) | `MainActivity.kt` — import warnings dialog title |
+| `separator_pipe` | ` \| ` | `AppScreen.kt` — FAB app count separator |
+| `crash_divider` | `---` | `CrashReportActivity.kt` — device info separator |
+| `watchapp_label_version` | `Version: ` | `SettingsScreen.kt` — watchapp version label |
+| `watchapp_label_md5` | `MD5:     ` | `SettingsScreen.kt` — watchapp MD5 label |
+
+### Code Deduplication
+
+#### `syncAppList()` helper (`MainActivity.kt`)
+
+The pattern "update ViewModel → save DataStore → validate auto-launch target → send broadcast" was duplicated across 6 callbacks (reorder, sort, remove confirm, rename save, rename reset, picker confirm). Extracted into `syncAppList(newApps: List<LaunchApp>)`, reducing ~30 lines of duplicated code.
+
+#### `sendPacket()` helper (`PebbleSenderHelper.kt`)
+
+Each `send*` method created a `PebbleDictionary`, called `sendDataToPebble`, and parsed the result with the same 3-line pattern. Extracted into `private suspend fun sendPacket(dict: PebbleDictionary, watch: WatchIdentifier? = null): TransmissionResult`. Eight methods (`sendWelcome`, `sendAppList` empty branch, `sendVibrationPref`, `sendAutoClosePref`, `sendAutoLaunchPref`, `sendAutoLaunchTarget`, `sendLaunchConfirm`) now call `sendPacket()`. The `sendAppListChunks` method remains unchanged due to its complex loop logic.
+
+#### `calc_text_frame()` helper (`pbw/src/c/window_main.c`)
+
+The layout formulas for `nav_x`, `text_width`, `text_x` were duplicated in 3 locations (`window_load`, populated branch, empty branch of `window_main_update_display`). Extracted into `static void calc_text_frame(int *out_x, int *out_width)` for a single source of truth.
+
+#### `refresh_auto_launch_timer()` helper (`pbw/src/c/packets.c`)
+
+The cancel/schedule pattern was duplicated in `handle_auto_launch_pref()` and `handle_auto_launch_target()`. Extracted into `static void refresh_auto_launch_timer(void)`.
+
+### Memory Optimizations
+
+#### `app_list_clear()` (`pbw/src/c/app_list.c`)
+
+Removed `memset(s_apps, 0, sizeof(s_apps))` from `app_list_clear()`. The `memset` zeroed 22KB on every new transfer, but `app_list_add()` overwrites all fields of each entry (`name`, `package`, `icon`, `has_icon`). Reduced to two assignments (`s_count = 0`, `s_current_index = 0`). Saves ~150µs per transfer at 148MHz. `app_list_init()` retains its `memset` for initial zeroing at startup.
+
+#### `str_empty_message()` (`pbw/src/c/strings.c`)
+
+Replaced `snprintf(s_empty_msg_buf, ...)` on a 64-byte static buffer with a direct return of the string literal. Saved 64 bytes of BSS and eliminated one `snprintf` call per invocation.
+
+### FAB Spacing Fix (`AppScreen.kt`)
+
+Added `horizontalArrangement = Arrangement.spacedBy(8.dp)` to the FAB's `Row` so the elements display as `+ | 3/20` with proper spacing between the add button, pipe separator, and app count.
+
+### Code Statistics
+
+| Component | Files | Lines changed |
+|---|---|---|
+| Watch App (C) | 4 | ~30 (packets.c ~15, app_list.c ~1, window_main.c ~12, strings.c ~3) |
+| Android App (Kotlin) | 4 | ~25 (MainActivity.kt ~10, PebbleSenderHelper.kt ~8, AppScreen.kt ~1, SettingsScreen.kt ~2, CrashReportActivity.kt ~1) |
+| Android Resources | 1 | +5 entries (strings.xml) |
+| **Total** | **9** | **~55** |
+
+### Build Status
+
+- Watch app: `pebble build` — BUILD SUCCESSFUL
+- Basalt: 29,321 B RAM / 64 KB, 36,215 B free heap, 4,643 B resources
+- Emery: 29,317 B RAM / 128 KB, 101,693 B free heap, 4,643 B resources
+- Android app: `./gradlew assembleDebug` — BUILD SUCCESSFUL
+
+### Design Decisions
+
+**Modular arithmetic for wrap-around**: Using `int8_t` cast and `int16_t` result avoids undefined behavior from signed overflow while correctly handling all 256 wrap-around cases. The `int16_t` cast is critical — casting the subtraction result to `int16_t` after `int8_t` subtraction ensures the sign bit is preserved.
+
+**`syncAppList` in lambda scope**: The helper lives inside `setContent {}` where `dataStore` (a `remember` variable) and `senderHelper` are accessible. Moving it to the class level would require threading these dependencies through parameters.
+
+**`sendPacket` with optional watch**: The `watch: WatchIdentifier? = null` parameter allows `sendPacket` to serve both broadcast sends (null) and targeted sends (specific watch), matching the original per-method signatures.
+
+**`memset` in init, not clear**: `app_list_init()` retains `memset` because it runs once at startup when `s_apps` contains uninitialized stack/BSS data. `app_list_clear()` does not need it because `app_list_add()` always writes every field before incrementing `s_count`.
+
+**String literal over snprintf**: A `const char*` string literal lives in rodata and is valid for the program's lifetime. The caller (`window_main_update_display`) passes the result to `text_layer_set_text()`, which copies the string internally. No lifetime issues.
+
+**Unchanged**: All existing functionality preserved. Protocol, UI behavior, and feature set remain identical.
