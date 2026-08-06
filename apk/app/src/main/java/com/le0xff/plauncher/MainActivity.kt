@@ -358,6 +358,13 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                fun syncAppList(newApps: List<LaunchApp>) {
+                    viewModel.setApps(newApps)
+                    dataStore.saveApps(newApps)
+                    validateAutoLaunchTarget(newApps)
+                    sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
+                }
+
                 var showPermissionDialog by remember { mutableStateOf(!canDrawOverlays.value || !ignoringBatteryOpt.value) }
                 var dismissedOnce by remember { mutableStateOf(false) }
 
@@ -464,19 +471,13 @@ class MainActivity : ComponentActivity() {
                             onReorderApp = { fromIndex, toIndex ->
                                 val reordered = viewModel.reorderApp(fromIndex, toIndex)
                                 if (reordered !== apps) {
-                                    viewModel.setApps(reordered)
-                                    dataStore.saveApps(reordered)
-                                    validateAutoLaunchTarget(reordered)
-                                    sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
+                                    syncAppList(reordered)
                                 }
                             },
                             onSortApps = { order ->
                                 val sorted = viewModel.sortApps(order)
                                 if (sorted !== apps) {
-                                    viewModel.setApps(sorted)
-                                    dataStore.saveApps(sorted)
-                                    validateAutoLaunchTarget(sorted)
-                                    sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
+                                    syncAppList(sorted)
                                 }
                             },
                             appCount = apps.size,
@@ -554,11 +555,8 @@ class MainActivity : ComponentActivity() {
                         confirmButton = {
                             TextButton(onClick = {
                                 val updatedApps = apps.filter { it.packageName != targetApp.packageName }
-                                dataStore.saveApps(updatedApps)
-                                viewModel.setApps(updatedApps)
-                                validateAutoLaunchTarget(updatedApps)
+                                syncAppList(updatedApps)
                                 viewModel.setRemoveAppTarget(null)
-                                sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                             }) {
                                 Text(stringResource(R.string.confirm_remove_confirm))
                             }
@@ -614,11 +612,8 @@ class MainActivity : ComponentActivity() {
                                 val updatedApps = apps.map { a ->
                                     if (a.packageName == targetApp.packageName) LaunchApp(a.packageName, finalName) else a
                                 }
-                                dataStore.saveApps(updatedApps)
-                                viewModel.setApps(updatedApps)
-                                validateAutoLaunchTarget(updatedApps)
+                                syncAppList(updatedApps)
                                 viewModel.setRenameAppTarget(null)
-                                sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                             }) {
                                 Text(stringResource(R.string.rename_button_save))
                             }
@@ -634,11 +629,8 @@ class MainActivity : ComponentActivity() {
                                     val updatedApps = apps.map { a ->
                                         if (a.packageName == targetApp.packageName) LaunchApp(a.packageName, originalName) else a
                                     }
-                                    dataStore.saveApps(updatedApps)
-                                    viewModel.setApps(updatedApps)
-                                    validateAutoLaunchTarget(updatedApps)
+                                    syncAppList(updatedApps)
                                     viewModel.setRenameAppTarget(null)
-                                    sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                                 }) {
                                     Text(stringResource(R.string.rename_button_reset))
                                 }
@@ -654,11 +646,8 @@ class MainActivity : ComponentActivity() {
                             onDismiss = { viewModel.setShowPicker(false) },
                             maxApps = MAX_APPS,
                             onConfirm = { selectedApps ->
-                                dataStore.saveApps(selectedApps)
-                                viewModel.setApps(selectedApps)
-                                validateAutoLaunchTarget(selectedApps)
+                                syncAppList(selectedApps)
                                 viewModel.setShowPicker(false)
-                                sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                             }
                         )
                     }
@@ -699,7 +688,7 @@ class MainActivity : ComponentActivity() {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(text = "⚠️")
+                                Text(text = stringResource(R.string.icon_warning))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(stringResource(R.string.import_warnings_title))
                             }

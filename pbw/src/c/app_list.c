@@ -97,5 +97,4 @@ void app_list_add(const char* name, const char* package, const uint8_t* icon_dat
 void app_list_clear(void) {
     s_count = 0;
     s_current_index = 0;
-    memset(s_apps, 0, sizeof(s_apps));
 }

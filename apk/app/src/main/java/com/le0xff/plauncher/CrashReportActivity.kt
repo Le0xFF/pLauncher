@@ -109,7 +109,7 @@ class CrashReportActivity : ComponentActivity() {
                                                         }
                                                         Spacer(Modifier.height(8.dp))
                                                         Text(
-                                                            text = "---",
+                                                            text = stringResource(R.string.crash_divider),
                                                             style = MaterialTheme.typography.bodySmall,
                                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                                         )

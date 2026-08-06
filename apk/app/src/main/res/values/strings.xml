@@ -129,4 +129,9 @@
     <string name="install_watchapp_missing">Watchapp not bundled in this build</string>
     <string name="install_watchapp_none">No Pebble app found to install the watchapp</string>
     <string name="install_watchapp_chooser">Install watchapp with</string>
+    <string name="icon_warning">\u26A0\uFE0F</string>
+    <string name="separator_pipe"> | </string>
+    <string name="crash_divider">---</string>
+    <string name="watchapp_label_version">Version: </string>
+    <string name="watchapp_label_md5">MD5:     </string>
 </resources>
