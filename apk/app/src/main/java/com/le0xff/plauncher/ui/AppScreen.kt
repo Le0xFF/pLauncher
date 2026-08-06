@@ -1,5 +1,11 @@
 package com.le0xff.plauncher.ui
 
+/**
+ * pLauncher Companion App — Home screen composable. Displays the app list with search, sort, drag-to-reorder, and add/remove/rename actions.
+ *
+ * @author Le0xFF
+ */
+
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.compose.foundation.Image
@@ -35,6 +41,9 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.ReorderableCollectionItemScope
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
+/**
+ * Home screen: searchable app list with drag-to-reorder, sort, add/remove/rename actions, and auto-launch target selector.
+ */
 @Composable
 fun AppScreen(
     apps: List<LaunchApp>,

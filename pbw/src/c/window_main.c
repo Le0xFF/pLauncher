@@ -1,3 +1,8 @@
+/*
+ * pLauncher Watchapp — Main window UI implementation. Creates layers, handles dynamic layout for basalt/emery screens.
+ *
+ * Author: Le0xFF
+ */
 #include "window_main.h"
 #include "app_list.h"
 #include "window_main_click.h"
@@ -21,6 +26,7 @@ static GRect s_screen_bounds;
 static char s_display_buf[APP_NAME_LEN];
 static char s_index_buf[32];
 
+// Calculate centered text frame with word-wrap area and dynamic height.
 static void calc_text_frame(int *out_x, int *out_width) {
     int w = s_screen_bounds.size.w;
     int nav_x = w - (w / LAYOUT_NAV_COL_DIVISOR);
@@ -28,6 +34,7 @@ static void calc_text_frame(int *out_x, int *out_width) {
     *out_x = (w - *out_width) / 2;
 }
 
+// Create all UI layers: icon, name text, index text, navigation bitmaps.
 static void window_load(Window* window) {
     Layer* window_layer = window_get_root_layer(window);
     GRect bounds = layer_get_bounds(window_layer);
@@ -108,6 +115,7 @@ static void window_unload(Window* window) {
     gbitmap_destroy(s_icon_bitmap);
 }
 
+// Request fresh app list from companion on window appear.
 static void window_appear(Window* window) {
     request_app_list();
     window_main_update_display();
@@ -128,6 +136,7 @@ Window* window_main_get_window(void) {
     return s_window;
 }
 
+// Dynamic rendering: adapts layout per basalt/emery, handles empty/loading states, two-pass text height.
 void window_main_update_display(void) {
     if (!s_text_layer) return;
 

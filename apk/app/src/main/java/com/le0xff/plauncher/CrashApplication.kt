@@ -1,5 +1,11 @@
 package com.le0xff.plauncher
 
+/**
+ * pLauncher Companion App — Application subclass that installs a custom uncaught exception handler for crash reporting when the setting is enabled.
+ *
+ * @author Le0xFF
+ */
+
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -12,6 +18,7 @@ import java.lang.Thread.UncaughtExceptionHandler
 
 class CrashApplication : Application() {
 
+    // Check crash reporting setting; if enabled, install default uncaught exception handler that saves report and launches CrashReportActivity.
     override fun onCreate() {
         super.onCreate()
 

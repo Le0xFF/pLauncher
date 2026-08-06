@@ -1,5 +1,11 @@
 package com.le0xff.plauncher.data
 
+/**
+ * pLauncher Companion App — YAML-based export/import of app lists. Validates duplicates, positions, and auto-launch conflicts on import.
+ *
+ * @author Le0xFF
+ */
+
 import android.content.pm.PackageManager
 import com.le0xff.plauncher.model.LaunchApp
 import org.yaml.snakeyaml.Yaml
@@ -18,6 +24,7 @@ data class ImportResult(
 
 object YamlExportImport {
 
+    // Format app list as YAML with package, custom_name, position, and auto_launch fields.
     fun exportAppsToYaml(
         apps: List<LaunchApp>,
         originalNames: Map<String, String>,
@@ -36,6 +43,7 @@ object YamlExportImport {
         return lines.joinToString("\n")
     }
 
+    // Parse YAML, validate duplicates/positions/auto-launch conflicts, resolve display names from PackageManager.
     fun importAppsFromYaml(
         yamlContent: String,
         packageManager: PackageManager,

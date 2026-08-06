@@ -1,3 +1,8 @@
+/*
+ * pLauncher Watchapp — Communication protocol definitions. Packet types, AppMessage keys, and public API declarations.
+ *
+ * Author: Le0xFF
+ */
 #ifndef PLAUNCHER_PACKETS_H
 #define PLAUNCHER_PACKETS_H
 

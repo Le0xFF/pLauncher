@@ -1,5 +1,11 @@
 package com.le0xff.plauncher
 
+/**
+ * pLauncher Companion App — Main Activity and ViewModel. Hosts the Compose UI, manages app list CRUD, settings, Pebble sync, and YAML import/export.
+ *
+ * @author Le0xFF
+ */
+
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -46,6 +52,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/**
+ * ViewModel holding UI state as StateFlow properties. Bridges the data store and the Compose UI.
+ */
 class AppViewModel : ViewModel() {
     private val _apps = MutableStateFlow<List<LaunchApp>>(emptyList())
     val apps: StateFlow<List<LaunchApp>> = _apps.asStateFlow()
@@ -165,6 +174,9 @@ class AppViewModel : ViewModel() {
     }
 }
 
+/**
+ * Main activity. Initializes data store and Pebble sender, sets up Compose UI with app list and settings tabs.
+ */
 class MainActivity : ComponentActivity() {
     companion object {
         const val MAX_APPS = 20
@@ -174,6 +186,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var appDataStore: AppDataStore
     private lateinit var senderHelper: PebbleSenderHelper
 
+    // Ensure the auto-launch target index is within bounds; resets to 0 and syncs if out of range.
     private fun validateAutoLaunchTarget(apps: List<LaunchApp>) {
         val target = viewModel.autoLaunchTarget.value
         if (target >= apps.size && apps.isNotEmpty()) {
@@ -186,6 +199,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Initialize data store, Pebble sender, load persisted prefs into ViewModel, set up Compose UI.
         super.onCreate(savedInstanceState)
         AppLogBuffer.info("MainActivity", "App started")
         appDataStore = AppDataStore(this)
@@ -808,12 +822,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Increment resume counter to trigger permission recheck in Compose.
     override fun onResume() {
         super.onResume()
         AppLogBuffer.debug("MainActivity", "Activity resumed")
         viewModel.onActivityResume()
     }
 
+    // Close Pebble sender to free resources.
     override fun onDestroy() {
         super.onDestroy()
         try {

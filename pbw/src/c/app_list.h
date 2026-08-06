@@ -1,3 +1,8 @@
+/*
+ * pLauncher Watchapp — App list data model. LaunchApp struct definition, constants, and function declarations.
+ *
+ * Author: Le0xFF
+ */
 #ifndef PLAUNCHER_APP_LIST_H
 #define PLAUNCHER_APP_LIST_H
 

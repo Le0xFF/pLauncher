@@ -1,3 +1,8 @@
+/*
+ * pLauncher Watchapp — Layout constants for dynamic UI positioning. Font sizes, margins, and navigation dimensions.
+ *
+ * Author: Le0xFF
+ */
 #ifndef PLAUNCHER_LAYOUT_H
 #define PLAUNCHER_LAYOUT_H
 

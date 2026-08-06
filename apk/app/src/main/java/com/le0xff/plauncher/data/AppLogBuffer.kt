@@ -1,5 +1,11 @@
 package com.le0xff.plauncher.data
 
+/**
+ * pLauncher Companion App — Thread-safe in-memory log buffer with 500-entry FIFO capacity. Used for debugging and log export.
+ *
+ * @author Le0xFF
+ */
+
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList

@@ -1,3 +1,8 @@
+/*
+ * pLauncher Watchapp — AppMessage packet handling implementation. Manages send/receive, preferences persistence, and protocol state machine.
+ *
+ * Author: Le0xFF
+ */
 #include "packets.h"
 #include "window_main.h"
 #include "app_list.h"
@@ -94,6 +99,7 @@ uint8_t packets_get_auto_launch_target(void) {
     return s_auto_launch_target;
 }
 
+// Deferred auto-launch: checks enabled flag, target validity, and dispatches launch.
 static void try_auto_launch(void) {
     if (s_auto_launch_enabled && s_auto_launch_target < (uint8_t)app_list_get_count()) {
         app_list_set_current_index(s_auto_launch_target);
@@ -104,6 +110,7 @@ static void try_auto_launch(void) {
     s_auto_launch_pending = false;
 }
 
+// 500ms delay timer to avoid conflicts with app opening.
 static void auto_launch_timer_handler(void* context) {
     s_auto_launch_timer = NULL;
     if (s_auto_launch_pending) {
@@ -164,13 +171,16 @@ static void handle_auto_close_pref(DictionaryIterator* iter) {
     }
 }
 
+// Reset send state and cancel response timeout on successful outbound.
 static void outbound_sent_handler(DictionaryIterator* iter, void* context) {
 }
 
+// Fallback on outbound failure; clears state to allow retry.
 static void outbound_failed_handler(DictionaryIterator* iter, AppMessageResult reason, void* context) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "Outbound failure: %d", (int)reason);
 }
 
+// 10-second timeout handler; resets state and allows retry.
 static void response_timeout_handler(void* context) {
     s_waiting_for_response = false;
     s_response_timer = NULL;
@@ -180,6 +190,7 @@ static void response_timeout_handler(void* context) {
     APP_LOG(APP_LOG_LEVEL_INFO, "Response timeout, ready to retry");
 }
 
+// Validate protocol version from phone and reset waiting state.
 static void handle_phone_welcome(DictionaryIterator* iter) {
     if (s_response_timer) {
         app_timer_cancel(s_response_timer);
@@ -199,6 +210,7 @@ static void handle_phone_welcome(DictionaryIterator* iter) {
     APP_LOG(APP_LOG_LEVEL_INFO, "Phone welcome received, protocol v1");
 }
 
+// Receive chunked app list; deduplicate by transfer ID, parse fields, clear on new transfer.
 static void handle_app_list(DictionaryIterator* iter) {
     Tuple* idTuple = dict_find(iter, KEY_TRANSFER_ID);
     uint8_t transfer_id = idTuple ? idTuple->value->uint8 : 0;
@@ -273,11 +285,13 @@ static void handle_vibration_pref(DictionaryIterator* iter) {
     }
 }
 
+// Close watch app after vibration duration has elapsed.
 static void auto_close_timer_handler(void* context) {
     exit_reason_set(APP_EXIT_ACTION_PERFORMED_SUCCESSFULLY);
     window_stack_pop_all(false);
 }
 
+// Trigger vibration per preference and schedule auto-close timer if enabled.
 static void handle_launch_confirm(DictionaryIterator* iter) {
     Tuple* t = dict_find(iter, KEY_LAUNCH_CONFIRM);
     if (!t) {
@@ -318,6 +332,7 @@ static void handle_launch_confirm(DictionaryIterator* iter) {
     }
 }
 
+// Dispatch incoming packets to the appropriate handler by type.
 static void inbox_received_handler(DictionaryIterator* iter, void* context) {
     Tuple* typeTuple = dict_find(iter, KEY_PACKET_TYPE);
     if (!typeTuple) {
