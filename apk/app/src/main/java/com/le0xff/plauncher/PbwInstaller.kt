@@ -1,5 +1,11 @@
 package com.le0xff.plauncher
 
+/**
+ * pLauncher Companion App — Utility for installing the bundled .pbw watchapp: checks availability, reads metadata, stages to cache, triggers Pebble app installer.
+ *
+ * @author Le0xFF
+ */
+
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
@@ -43,6 +49,7 @@ object PbwInstaller {
         }.getOrNull()
     }
 
+    // Stage bundled .pbw to cache, then launch system file chooser to trigger Pebble app installer.
     fun install(context: Context): Boolean {
         val staged = stage(context) ?: return false
 

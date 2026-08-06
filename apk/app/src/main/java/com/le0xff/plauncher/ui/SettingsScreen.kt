@@ -1,5 +1,11 @@
 package com.le0xff.plauncher.ui
 
+/**
+ * pLauncher Companion App — Settings screen with expandable accordion panels for general, watchapp, permissions, and debug options.
+ *
+ * @author Le0xFF
+ */
+
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -32,6 +38,9 @@ import androidx.compose.ui.unit.dp
 import com.le0xff.plauncher.PbwInstaller
 import com.le0xff.plauncher.R
 
+/**
+ * Settings screen: expandable accordion panels for general, watchapp, import/export, permissions, install, and debug options.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -505,6 +514,9 @@ fun SettingsScreen(
     }
 }
 
+/**
+ * Expandable card with animated collapse/expand. Clicking the header toggles visibility of the content section.
+ */
 @Composable
 private fun AccordionCard(
     title: String,

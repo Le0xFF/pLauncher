@@ -1,5 +1,11 @@
 package com.le0xff.plauncher
 
+/**
+ * pLauncher Companion App — Foreground service that receives AppMessage packets from the Pebble watch via PebbleKit2. Handles watch connections and launch requests.
+ *
+ * @author Le0xFF
+ */
+
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -24,6 +30,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
+/**
+ * Foreground service that listens for AppMessage packets from the Pebble watch. Manages watch lifecycle and app launch requests.
+ */
 class PebbleListenerService : BasePebbleListenerService() {
     protected override val coroutineScope: CoroutineScope = MainScope()
 
@@ -61,6 +70,7 @@ class PebbleListenerService : BasePebbleListenerService() {
         }
     }
 
+    // Initialize sender, data store, wake lock, broadcast receivers, and start foreground notification.
     override fun onCreate() {
         super.onCreate()
         AppLogBuffer.info("PebbleService", "Service created")
@@ -95,6 +105,7 @@ class PebbleListenerService : BasePebbleListenerService() {
         }
     }
 
+    // Clean up receivers, wake lock, foreground notification, and sender.
     override fun onDestroy() {
         AppLogBuffer.info("PebbleService", "Service destroyed")
         try {
@@ -120,6 +131,7 @@ class PebbleListenerService : BasePebbleListenerService() {
         super.onDestroy()
     }
 
+    // Dispatch incoming AppMessage packets by type. Acquires wake lock during processing.
     override suspend fun onMessageReceived(
         watchappUUID: UUID,
         data: PebbleDictionary,
@@ -150,6 +162,7 @@ class PebbleListenerService : BasePebbleListenerService() {
         }
     }
 
+    // Watch connection handler: store display type, send welcome, prefs, refresh icons, send full app list.
     private suspend fun handleWatchWelcome(data: PebbleDictionary, watch: WatchIdentifier): ReceiveResult {
         AppLogBuffer.info("PebbleService", "Watch connected: $watch")
         senderHelper?.let { helper ->
@@ -179,6 +192,7 @@ class PebbleListenerService : BasePebbleListenerService() {
         return ReceiveResult.Ack
     }
 
+    // App launch request: extract index, look up app by package name, start LaunchActivity.
     private fun handleLaunchApp(data: PebbleDictionary, watch: WatchIdentifier): ReceiveResult {
         val indexItem = data[2u]
         val index = when (indexItem) {

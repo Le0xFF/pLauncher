@@ -1,5 +1,11 @@
 package com.le0xff.plauncher.ui
 
+/**
+ * pLauncher Companion App — Theme system with Light, Dark, and Amoled variants. Provides Material3 color schemes and system UI integration.
+ *
+ * @author Le0xFF
+ */
+
 import android.graphics.Color as AndroidColor
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.LocalTonalElevationEnabled

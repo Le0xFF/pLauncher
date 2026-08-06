@@ -1,5 +1,11 @@
 package com.le0xff.plauncher.data
 
+/**
+ * pLauncher Companion App — Persistent data store using SharedPreferences. Manages app list and all user preferences with hex-encoded icon data.
+ *
+ * @author Le0xFF
+ */
+
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
@@ -24,6 +30,7 @@ class AppDataStore(private val context: Context) {
         private const val SEP = "|"
         private const val LINE_SEP = "\n"
 
+        // Encode/decode icon byte arrays to/from hex strings for SharedPreferences storage.
         private fun bytesToHex(data: ByteArray?): String {
             if (data == null) return ""
             return data.joinToString("") { "%02x".format(it) }
@@ -181,6 +188,7 @@ class AppDataStore(private val context: Context) {
         return prefs.getInt(KEY_AUTO_LAUNCH_TARGET, 0)
     }
 
+    // Regenerate icons for all apps by querying PackageManager, update in-memory list and persist.
     fun refreshIcons(packageManager: PackageManager): List<LaunchApp> {
         val current = _apps.value
         val updated = current.map { app ->

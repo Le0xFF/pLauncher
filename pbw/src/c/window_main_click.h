@@ -1,3 +1,8 @@
+/*
+ * pLauncher Watchapp — Click configuration provider declaration.
+ *
+ * Author: Le0xFF
+ */
 #ifndef PLAUNCHER_WINDOW_MAIN_CLICK_H
 #define PLAUNCHER_WINDOW_MAIN_CLICK_H
 

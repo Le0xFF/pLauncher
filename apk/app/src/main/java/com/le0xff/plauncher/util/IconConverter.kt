@@ -1,5 +1,11 @@
 package com.le0xff.plauncher.util
 
+/**
+ * pLauncher Companion App — Converts Android app icons to Pebble-specific formats: 4-bit color (1024 bytes) and 1-bit B/W (128 bytes) at 32x32 resolution.
+ *
+ * @author Le0xFF
+ */
+
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -11,6 +17,7 @@ import com.le0xff.plauncher.data.AppLogBuffer
 object IconConverter {
     private const val ICON_SIZE = 32
 
+    // Quantize each pixel to 4-bit RGBA: 2 bits each for alpha, red, green, blue. Packs into 1024 bytes (32x32).
     fun convertToPebbleColorIcon(bitmap: Bitmap): ByteArray {
         val scaled = Bitmap.createScaledBitmap(bitmap, ICON_SIZE, ICON_SIZE, true)
         val pixels = IntArray(ICON_SIZE * ICON_SIZE)
@@ -33,6 +40,7 @@ object IconConverter {
         return result
     }
 
+    // Convert to 1-bit monochrome using luminance threshold. Row-padded to 4-byte alignment (128 bytes for 32x32).
     fun convertToPebbleBwIcon(bitmap: Bitmap): ByteArray {
         val scaled = Bitmap.createScaledBitmap(bitmap, ICON_SIZE, ICON_SIZE, true)
         val pixels = IntArray(ICON_SIZE * ICON_SIZE)

@@ -1,5 +1,11 @@
 package com.le0xff.plauncher
 
+/**
+ * pLauncher Companion App — Transient Activity that launches a target Android app by package name and broadcasts the result to PebbleListenerService.
+ *
+ * @author Le0xFF
+ */
+
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,6 +17,7 @@ class LaunchActivity : ComponentActivity() {
         private const val EXTRA_RESULT = "result"
     }
 
+    // Trampoline: extract package name, resolve launch intent, start target app, broadcast result, finish immediately.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val packageName = intent.getStringExtra("package_name") ?: run {

@@ -1,5 +1,11 @@
 package com.le0xff.plauncher
 
+/**
+ * pLauncher Companion App — BroadcastReceiver that restarts PebbleListenerService as a foreground service on device boot.
+ *
+ * @author Le0xFF
+ */
+
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent

@@ -1,5 +1,11 @@
 package com.le0xff.plauncher
 
+/**
+ * pLauncher Companion App — Activity that displays crash report details with copy-to-clipboard, copyable stack trace, and restart/close actions.
+ *
+ * @author Le0xFF
+ */
+
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -24,6 +30,7 @@ import com.le0xff.plauncher.R
 @OptIn(ExperimentalMaterial3Api::class)
 class CrashReportActivity : ComponentActivity() {
 
+    // Parse crash report from intent, render structured UI with exception details, stack trace, and action buttons.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 

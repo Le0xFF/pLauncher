@@ -1,5 +1,11 @@
 package com.le0xff.plauncher.ui
 
+/**
+ * pLauncher Companion App — Full-screen dialog for selecting installed apps to add to the launcher, with search and system app filtering.
+ *
+ * @author Le0xFF
+ */
+
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
@@ -19,6 +25,9 @@ import com.le0xff.plauncher.model.LaunchApp
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
 
+/**
+ * Dialog for selecting installed apps to add to the launcher. Shows search, system app filtering, and selection limit.
+ */
 @Composable
 fun AppPickerDialog(
     selectedApps: List<LaunchApp>,

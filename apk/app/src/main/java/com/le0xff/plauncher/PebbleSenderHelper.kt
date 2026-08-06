@@ -1,5 +1,11 @@
 package com.le0xff.plauncher
 
+/**
+ * pLauncher Companion App — Helper that wraps PebbleKit2's DefaultPebbleSender to send AppMessage packets to the watch. Implements the communication protocol.
+ *
+ * @author Le0xFF
+ */
+
 import android.content.Context
 import com.le0xff.plauncher.model.LaunchApp
 import io.rebble.pebblekit2.client.DefaultPebbleSender
@@ -10,6 +16,9 @@ import io.rebble.pebblekit2.common.model.TransmissionResult
 import io.rebble.pebblekit2.common.model.WatchIdentifier
 import java.util.UUID
 
+/**
+ * Wrapper around PebbleKit2's DefaultPebbleSender. Handles protocol-specific packet construction and chunked app list transfers.
+ */
 class PebbleSenderHelper(context: Context) {
     private val sender: PebbleSender = DefaultPebbleSender(context)
     private var transferId: UInt = 0u
@@ -19,6 +28,7 @@ class PebbleSenderHelper(context: Context) {
         val WATCH_APP_UUID = UUID.fromString("07b1efa9-3d32-423c-b0e7-572cbc0893b8")
     }
 
+    // Send protocol welcome packet with version info.
     suspend fun sendWelcome(watch: WatchIdentifier?): TransmissionResult {
         val dict: PebbleDictionary = mapOf(
             0u to PebbleDictionaryItem.UInt8(10),
@@ -27,6 +37,7 @@ class PebbleSenderHelper(context: Context) {
         return sendPacket(dict, watch)
     }
 
+    // Send app list to watch. Increments transfer ID, sends empty marker if no apps, otherwise delegates to chunked sender.
     suspend fun sendAppList(apps: List<LaunchApp>, watch: WatchIdentifier?): TransmissionResult {
         transferId = (transferId + 1u) and 0xFFu
         val currentTransferId = transferId.toUByte()
@@ -44,6 +55,7 @@ class PebbleSenderHelper(context: Context) {
         return sendAppListChunks(apps, watch, currentTransferId)
     }
 
+    // Send each app as a separate packet with the same transfer ID. Watch reassembles chunks by transfer ID.
     private suspend fun sendAppListChunks(apps: List<LaunchApp>, watch: WatchIdentifier?, transferId: UByte): TransmissionResult {
         val watches = watch?.let { listOf(it) }
         var lastResult: TransmissionResult = TransmissionResult.FailedTimeout

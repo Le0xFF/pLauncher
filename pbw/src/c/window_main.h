@@ -1,3 +1,8 @@
+/*
+ * pLauncher Watchapp — Main window API declarations. Window creation, access, and display update.
+ *
+ * Author: Le0xFF
+ */
 #ifndef PLAUNCHER_WINDOW_MAIN_H
 #define PLAUNCHER_WINDOW_MAIN_H
 

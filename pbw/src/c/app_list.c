@@ -1,3 +1,8 @@
+/*
+ * pLauncher Watchapp — App list management implementation. CRUD operations, circular navigation, and icon storage.
+ *
+ * Author: Le0xFF
+ */
 #include "app_list.h"
 #include <pebble.h>
 #include <string.h>
@@ -41,6 +46,7 @@ bool app_list_has_icon(void) {
     return s_apps[s_current_index].has_icon;
 }
 
+// Circular navigation: advances index with wrap-around to the first entry.
 void app_list_next(void) {
     if (s_count == 0) return;
     s_current_index++;
@@ -49,6 +55,7 @@ void app_list_next(void) {
     }
 }
 
+// Circular navigation: decrements index with wrap-around to the last entry.
 void app_list_prev(void) {
     if (s_count == 0) return;
     s_current_index--;
@@ -71,6 +78,7 @@ void app_list_reset(void) {
     s_current_index = 0;
 }
 
+// Only accepts icons of exact APP_ICON_SIZE; rejects mismatched lengths.
 void app_list_add(const char* name, const char* package, const uint8_t* icon_data, uint16_t icon_len) {
     if (s_count >= APP_LIST_MAX_APPS) return;
     if (name) {
