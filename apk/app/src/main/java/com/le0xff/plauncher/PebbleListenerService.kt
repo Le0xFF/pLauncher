@@ -1,7 +1,8 @@
 package com.le0xff.plauncher
 
 /**
- * pLauncher Companion App — Foreground service that receives AppMessage packets from the Pebble watch via PebbleKit2. Handles watch connections and launch requests.
+ * pLauncher Companion App — Foreground service that receives AppMessage packets
+ * from the Pebble watch via PebbleKit2. Handles watch connections and launch requests.
  *
  * @author Le0xFF
  */
@@ -20,6 +21,11 @@ import com.le0xff.plauncher.R
 import com.le0xff.plauncher.data.AppDataStore
 import com.le0xff.plauncher.data.AppLogBuffer
 import com.le0xff.plauncher.model.LaunchApp
+import com.le0xff.plauncher.protocol.KEY_APP_INDEX
+import com.le0xff.plauncher.protocol.KEY_PACKET_TYPE
+import com.le0xff.plauncher.protocol.KEY_DISPLAY_TYPE
+import com.le0xff.plauncher.protocol.PACKET_TYPE_LAUNCH_APP
+import com.le0xff.plauncher.protocol.PACKET_TYPE_WATCH_WELCOME
 import io.rebble.pebblekit2.client.BasePebbleListenerService
 import io.rebble.pebblekit2.common.model.PebbleDictionary
 import io.rebble.pebblekit2.common.model.PebbleDictionaryItem
@@ -131,28 +137,43 @@ class PebbleListenerService : BasePebbleListenerService() {
         super.onDestroy()
     }
 
+    // Extract a packet type as an Int from a dictionary item, or null if the type is not recognized.
+    private fun parsePacketType(data: PebbleDictionary): Int? {
+        val item = data[KEY_PACKET_TYPE]
+        return when (item) {
+            is PebbleDictionaryItem.UInt32 -> item.value.toInt()
+            is PebbleDictionaryItem.Int32 -> item.value
+            else -> null
+        }
+    }
+
+    // Extract a display type as an Int from a dictionary item, defaulting to 1 (color).
+    private fun parseDisplayType(data: PebbleDictionary): Int {
+        val item = data[KEY_DISPLAY_TYPE]
+        return when (item) {
+            is PebbleDictionaryItem.UInt32 -> item.value.toInt()
+            is PebbleDictionaryItem.Int32 -> item.value
+            else -> 1
+        }
+    }
+
     // Dispatch incoming AppMessage packets by type. Acquires wake lock during processing.
     override suspend fun onMessageReceived(
         watchappUUID: UUID,
         data: PebbleDictionary,
-        watch: WatchIdentifier
+        @Suppress("UnusedParameter") watch: WatchIdentifier
     ): ReceiveResult {
-        val packetTypeItem = data[0u]
-        val packetType = when (packetTypeItem) {
-            is PebbleDictionaryItem.UInt32 -> packetTypeItem.value.toInt()
-            is PebbleDictionaryItem.Int32 -> packetTypeItem.value
-            else -> return ReceiveResult.Nack
-        }
+        val packetType = parsePacketType(data) ?: return ReceiveResult.Nack
 
         wakeLock?.let { if (!it.isHeld) it.acquire() }
         return try {
             when (packetType) {
-            0 -> handleWatchWelcome(data, watch)
-            1 -> handleLaunchApp(data, watch)
-            else -> {
-                AppLogBuffer.error("PebbleService", "Unknown packet type: $packetType")
-                ReceiveResult.Nack
-            }
+                PACKET_TYPE_WATCH_WELCOME -> handleWatchWelcome(data, watch)
+                PACKET_TYPE_LAUNCH_APP -> handleLaunchApp(data, watch)
+                else -> {
+                    AppLogBuffer.error("PebbleService", "Unknown packet type: $packetType")
+                    ReceiveResult.Nack
+                }
             }
         } catch (e: Exception) {
             AppLogBuffer.error("PebbleService", "Error processing message: ${e.message}")
@@ -166,12 +187,7 @@ class PebbleListenerService : BasePebbleListenerService() {
     private suspend fun handleWatchWelcome(data: PebbleDictionary, watch: WatchIdentifier): ReceiveResult {
         AppLogBuffer.info("PebbleService", "Watch connected: $watch")
         senderHelper?.let { helper ->
-            val displayTypeItem = data[15u]
-            val displayType = when (displayTypeItem) {
-                is PebbleDictionaryItem.UInt32 -> displayTypeItem.value.toInt()
-                is PebbleDictionaryItem.Int32 -> displayTypeItem.value
-                else -> 1
-            }
+            val displayType = parseDisplayType(data)
             helper.watchDisplayType = displayType
             AppLogBuffer.info("PebbleService", "Watch display type: ${if (displayType == 1) "Color" else "B/W"}")
             helper.sendWelcome(watch)
@@ -185,7 +201,12 @@ class PebbleListenerService : BasePebbleListenerService() {
             val autoLaunchTarget = dataStore?.getAutoLaunchTarget() ?: 0
             helper.sendAutoLaunchTarget(autoLaunchTarget.toUInt())
             val apps = dataStore?.refreshIcons(packageManager) ?: emptyList()
-            AppLogBuffer.info("PebbleService", "Icons refreshed: ${apps.size} apps, ${apps.count { it.iconColorData != null }} with color icon, ${apps.count { it.iconBwData != null }} with B/W icon")
+            AppLogBuffer.info(
+                "PebbleService",
+                "Icons refreshed: ${apps.size} apps, " +
+                    "${apps.count { it.iconColorData != null }} with color icon, " +
+                    "${apps.count { it.iconBwData != null }} with B/W icon"
+            )
             helper.sendAppList(apps, watch)
         }
         updateNotification(getString(R.string.status_connected))
@@ -193,8 +214,8 @@ class PebbleListenerService : BasePebbleListenerService() {
     }
 
     // App launch request: extract index, look up app by package name, start LaunchActivity.
-    private fun handleLaunchApp(data: PebbleDictionary, watch: WatchIdentifier): ReceiveResult {
-        val indexItem = data[2u]
+    private fun handleLaunchApp(data: PebbleDictionary, @Suppress("UnusedParameter") watch: WatchIdentifier): ReceiveResult {
+        val indexItem = data[KEY_APP_INDEX]
         val index = when (indexItem) {
             is PebbleDictionaryItem.UInt32 -> indexItem.value.toInt()
             is PebbleDictionaryItem.Int32 -> indexItem.value

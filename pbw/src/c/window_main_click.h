@@ -8,6 +8,9 @@
 
 #include <pebble.h>
 
-void window_main_click_config_provider(void* context);
+// Repeat rate for navigation click handlers (ms)
+#define CLICK_REPEAT_INTERVAL_MS 200
+
+void window_main_click_config_provider(void *context);
 
 #endif

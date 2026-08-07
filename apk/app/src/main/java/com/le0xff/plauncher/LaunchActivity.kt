@@ -1,7 +1,8 @@
 package com.le0xff.plauncher
 
 /**
- * pLauncher Companion App — Transient Activity that launches a target Android app by package name and broadcasts the result to PebbleListenerService.
+ * pLauncher Companion App — Transient Activity that launches a target Android
+ * app by package name and broadcasts the result to PebbleListenerService.
  *
  * @author Le0xFF
  */

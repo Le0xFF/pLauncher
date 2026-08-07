@@ -1,7 +1,8 @@
 package com.le0xff.plauncher.data
 
 /**
- * pLauncher Companion App — Persistent data store using SharedPreferences. Manages app list and all user preferences with hex-encoded icon data.
+ * pLauncher Companion App — Persistent data store using SharedPreferences.
+ * Manages app list and all user preferences with hex-encoded icon data.
  *
  * @author Le0xFF
  */
@@ -29,6 +30,15 @@ class AppDataStore(private val context: Context) {
         private const val KEY_AUTO_LAUNCH_TARGET = "auto_launch_target"
         private const val SEP = "|"
         private const val LINE_SEP = "\n"
+        private const val FIELD_COUNT_NO_ICON = 2
+        private const val FIELD_COUNT_FULL = 4
+        private const val IDX_PACKAGE = 0
+        private const val IDX_DISPLAY = 1
+        private const val IDX_ICON_COLOR = 2
+        private const val IDX_ICON_BW = 3
+        private const val HEX_NIBBLE_SHIFT = 4
+        private const val HEX_NIBBLE_BITS = 4
+        private const val HEX_OFFSET = 10
 
         // Encode/decode icon byte arrays to/from hex strings for SharedPreferences storage.
         private fun bytesToHex(data: ByteArray?): String {
@@ -38,12 +48,12 @@ class AppDataStore(private val context: Context) {
 
         private fun hexToBytes(hex: String?): ByteArray? {
             if (hex == null || hex.isBlank()) return null
-            if (hex.length % 2 != 0) return null
-            val result = ByteArray(hex.length / 2)
+            if (hex.length % FIELD_COUNT_NO_ICON != 0) return null
+            val result = ByteArray(hex.length / FIELD_COUNT_NO_ICON)
             for (i in result.indices) {
-                val hi = hex.decodeDigit(i * 2)
-                val lo = hex.decodeDigit(i * 2 + 1)
-                result[i] = ((hi shl 4) or lo).toByte()
+                val hi = hex.decodeDigit(i * FIELD_COUNT_NO_ICON)
+                val lo = hex.decodeDigit(i * FIELD_COUNT_NO_ICON + 1)
+                result[i] = ((hi shl HEX_NIBBLE_SHIFT) or lo).toByte()
             }
             return result
         }
@@ -52,8 +62,8 @@ class AppDataStore(private val context: Context) {
             val c = this[index]
             return when {
                 c in '0'..'9' -> c - '0'
-                c in 'a'..'f' -> c - 'a' + 10
-                c in 'A'..'F' -> c - 'A' + 10
+                c in 'a'..'f' -> c - 'a' + HEX_OFFSET
+                c in 'A'..'F' -> c - 'A' + HEX_OFFSET
                 else -> -1
             }
         }
@@ -90,7 +100,9 @@ class AppDataStore(private val context: Context) {
             val bwHex = bytesToHex(app.iconBwData)
             "${app.packageName}$SEP${app.displayName}$SEP$colorHex$SEP$bwHex"
         }
-        prefs.edit().putString(KEY_APPS, lines).commit()
+        val editor = prefs.edit()
+        editor.putString(KEY_APPS, lines)
+        editor.commit()
     }
 
     fun reloadApps() {
@@ -101,14 +113,18 @@ class AppDataStore(private val context: Context) {
 
     fun setShowSystemApps(value: Boolean) {
         _showSystemApps.value = value
-        prefs.edit().putBoolean(KEY_SYSTEM_APPS, value).apply()
+        val e = prefs.edit()
+        e.putBoolean(KEY_SYSTEM_APPS, value)
+        e.apply()
     }
 
     fun getGenerateCrashReports(): Boolean = _generateCrashReports.value
 
     fun setGenerateCrashReports(value: Boolean) {
         _generateCrashReports.value = value
-        prefs.edit().putBoolean(KEY_GENERATE_CRASH_REPORTS, value).apply()
+        val e = prefs.edit()
+        e.putBoolean(KEY_GENERATE_CRASH_REPORTS, value)
+        e.apply()
     }
 
     private fun loadApps(): List<LaunchApp> {
@@ -117,8 +133,12 @@ class AppDataStore(private val context: Context) {
         return data.split(LINE_SEP).mapNotNull { line ->
             val parts = line.split(SEP)
             return@mapNotNull when (parts.size) {
-                2 -> LaunchApp(parts[0], parts[1])
-                4 -> LaunchApp(parts[0], parts[1], hexToBytes(parts[2]), hexToBytes(parts[3]))
+                FIELD_COUNT_NO_ICON -> LaunchApp(parts[IDX_PACKAGE], parts[IDX_DISPLAY])
+                FIELD_COUNT_FULL -> {
+                    val colorBytes = hexToBytes(parts[IDX_ICON_COLOR])
+                    val bwBytes = hexToBytes(parts[IDX_ICON_BW])
+                    LaunchApp(parts[IDX_PACKAGE], parts[IDX_DISPLAY], colorBytes, bwBytes)
+                }
                 else -> null
             }
         }
@@ -141,14 +161,18 @@ class AppDataStore(private val context: Context) {
 
     fun setAppTheme(value: AppTheme) {
         _appTheme.value = value
-        prefs.edit().putString(KEY_THEME, value.name).apply()
+        val e = prefs.edit()
+        e.putString(KEY_THEME, value.name)
+        e.apply()
     }
 
     fun getVibrationPref(): Int = _vibrationPref.value
 
     fun setVibrationPref(value: Int) {
         _vibrationPref.value = value
-        prefs.edit().putInt(KEY_VIBRATION_PREF, value).apply()
+        val e = prefs.edit()
+        e.putInt(KEY_VIBRATION_PREF, value)
+        e.apply()
     }
 
     private fun loadVibrationPref(): Int {
@@ -159,7 +183,9 @@ class AppDataStore(private val context: Context) {
 
     fun setAutoClose(value: Boolean) {
         _autoClose.value = value
-        prefs.edit().putBoolean(KEY_AUTO_CLOSE, value).apply()
+        val e = prefs.edit()
+        e.putBoolean(KEY_AUTO_CLOSE, value)
+        e.apply()
     }
 
     private fun loadAutoClose(): Boolean {
@@ -170,7 +196,9 @@ class AppDataStore(private val context: Context) {
 
     fun setAutoLaunchEnabled(value: Boolean) {
         _autoLaunchEnabled.value = value
-        prefs.edit().putBoolean(KEY_AUTO_LAUNCH, value).apply()
+        val e = prefs.edit()
+        e.putBoolean(KEY_AUTO_LAUNCH, value)
+        e.apply()
     }
 
     private fun loadAutoLaunchEnabled(): Boolean {
@@ -181,7 +209,9 @@ class AppDataStore(private val context: Context) {
 
     fun setAutoLaunchTarget(value: Int) {
         _autoLaunchTarget.value = value
-        prefs.edit().putInt(KEY_AUTO_LAUNCH_TARGET, value).apply()
+        val e = prefs.edit()
+        e.putInt(KEY_AUTO_LAUNCH_TARGET, value)
+        e.apply()
     }
 
     private fun loadAutoLaunchTarget(): Int {
@@ -189,7 +219,7 @@ class AppDataStore(private val context: Context) {
     }
 
     // Regenerate icons for all apps by querying PackageManager, update in-memory list and persist.
-    fun refreshIcons(packageManager: PackageManager): List<LaunchApp> {
+    fun refreshIcons(@Suppress("UnusedParameter") packageManager: PackageManager): List<LaunchApp> {
         val current = _apps.value
         val updated = current.map { app ->
             val icons = IconConverter.getAppIconBitmaps(context, app.packageName)

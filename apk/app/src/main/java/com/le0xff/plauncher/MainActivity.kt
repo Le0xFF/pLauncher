@@ -1,7 +1,8 @@
 package com.le0xff.plauncher
 
 /**
- * pLauncher Companion App — Main Activity and ViewModel. Hosts the Compose UI, manages app list CRUD, settings, Pebble sync, and YAML import/export.
+ * pLauncher Companion App — Main Activity and ViewModel. Hosts the Compose UI,
+ * manages app list CRUD, settings, Pebble sync, and YAML import/export.
  *
  * @author Le0xFF
  */
@@ -21,11 +22,28 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.Alignment
-import androidx.compose.material3.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -44,13 +62,15 @@ import com.le0xff.plauncher.ui.SettingsScreen
 import com.le0xff.plauncher.R
 import com.le0xff.plauncher.ui.checkCanDrawOverlays
 import com.le0xff.plauncher.ui.checkIgnoringBatteryOptimizations
-import com.le0xff.plauncher.ui.pLauncherTheme
+import com.le0xff.plauncher.ui.PLauncherTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+enum class AppTab { Apps, Settings }
 
 /**
  * ViewModel holding UI state as StateFlow properties. Bridges the data store and the Compose UI.
@@ -186,6 +206,28 @@ class MainActivity : ComponentActivity() {
     private lateinit var appDataStore: AppDataStore
     private lateinit var senderHelper: PebbleSenderHelper
 
+    // Return true if any of the import warning conditions are met.
+    private fun hasImportWarnings(result: ImportResult): Boolean =
+        result.skippedPackages.isNotEmpty() ||
+            result.duplicatePackages.isNotEmpty() ||
+            result.duplicatePositionPackages.isNotEmpty() ||
+            result.outOfRangePackages.isNotEmpty() ||
+            result.multipleAutoLaunch ||
+            result.maxAppsExceeded
+
+    // Load persisted preferences from data store into the ViewModel.
+    private fun loadPersistedPrefs() {
+        viewModel.setApps(appDataStore.apps.value)
+        viewModel.setShowSystemApps(appDataStore.getShowSystemApps())
+        viewModel.setGenerateCrashReports(appDataStore.getGenerateCrashReports())
+        viewModel.setAppTheme(appDataStore.getAppTheme())
+        viewModel.setVibrationPref(appDataStore.getVibrationPref())
+        viewModel.setAutoClose(appDataStore.getAutoClose())
+        viewModel.setAutoLaunchEnabled(appDataStore.getAutoLaunchEnabled())
+        viewModel.setAutoLaunchTarget(appDataStore.getAutoLaunchTarget())
+        viewModel.setConnectionStatus(getString(R.string.status_disconnected))
+    }
+
     // Ensure the auto-launch target index is within bounds; resets to 0 and syncs if out of range.
     private fun validateAutoLaunchTarget(apps: List<LaunchApp>) {
         val target = viewModel.autoLaunchTarget.value
@@ -198,6 +240,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @Suppress("CognitiveComplexMethod", "LongMethod", "CyclomaticComplexMethod")
     override fun onCreate(savedInstanceState: Bundle?) {
         // Initialize data store, Pebble sender, load persisted prefs into ViewModel, set up Compose UI.
         super.onCreate(savedInstanceState)
@@ -205,20 +248,12 @@ class MainActivity : ComponentActivity() {
         appDataStore = AppDataStore(this)
         senderHelper = PebbleSenderHelper(this)
 
-        // Load persisted data into ViewModel BEFORE setContent to avoid initial flash
-        viewModel.setApps(appDataStore.apps.value)
-        viewModel.setShowSystemApps(appDataStore.getShowSystemApps())
-        viewModel.setGenerateCrashReports(appDataStore.getGenerateCrashReports())
-        viewModel.setAppTheme(appDataStore.getAppTheme())
-        viewModel.setVibrationPref(appDataStore.getVibrationPref())
-        viewModel.setAutoClose(appDataStore.getAutoClose())
-        viewModel.setAutoLaunchEnabled(appDataStore.getAutoLaunchEnabled())
-        viewModel.setAutoLaunchTarget(appDataStore.getAutoLaunchTarget())
-        viewModel.setConnectionStatus(getString(R.string.status_disconnected))
+    // Load persisted data into ViewModel BEFORE setContent to avoid initial flash
+    loadPersistedPrefs()
 
         setContent {
             val appTheme by viewModel.appTheme.collectAsState()
-            pLauncherTheme(theme = appTheme) {
+            PLauncherTheme(theme = appTheme) {
                 val context = LocalContext.current
                 val dataStore = remember { appDataStore }
 
@@ -236,13 +271,13 @@ class MainActivity : ComponentActivity() {
                 val autoLaunchEnabled by viewModel.autoLaunchEnabled.collectAsState()
                 val autoLaunchTarget by viewModel.autoLaunchTarget.collectAsState()
 
-                var selectedTab by remember { mutableStateOf(0) }
+                var selectedTab by remember { mutableStateOf(AppTab.Apps) }
 
                 val canDrawOverlays = remember(resumeCounter) {
-                    mutableStateOf(checkCanDrawOverlays(this))
+                    mutableStateOf(false).apply { value = checkCanDrawOverlays(this@MainActivity) }
                 }
                 val ignoringBatteryOpt = remember(resumeCounter) {
-                    mutableStateOf(checkIgnoringBatteryOptimizations(this))
+                    mutableStateOf(false).apply { value = checkIgnoringBatteryOptimizations(this@MainActivity) }
                 }
 
                 var importPendingResult: ImportResult? by remember { mutableStateOf(null) }
@@ -252,7 +287,9 @@ class MainActivity : ComponentActivity() {
                     if (result.resultCode != android.app.Activity.RESULT_OK) return@rememberLauncherForActivityResult
                     val uri = result.data?.data ?: return@rememberLauncherForActivityResult
                     val yamlContent = try {
-                        contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                        val stream = contentResolver.openInputStream(uri)
+                        val reader = stream?.bufferedReader()
+                        reader?.use { it.readText() } ?: ""
                     } catch (e: Exception) {
                         Toast.makeText(this, R.string.import_failed, Toast.LENGTH_SHORT).show()
                         return@rememberLauncherForActivityResult
@@ -267,7 +304,8 @@ class MainActivity : ComponentActivity() {
                         Toast.makeText(this, R.string.import_failed, Toast.LENGTH_SHORT).show()
                         return@rememberLauncherForActivityResult
                     }
-                    if (parsedResult.apps.isEmpty() && parsedResult.skippedPackages.isEmpty() && !parsedResult.multipleAutoLaunch && !parsedResult.maxAppsExceeded && parsedResult.duplicatePackages.isEmpty() && parsedResult.duplicatePositionPackages.isEmpty() && parsedResult.outOfRangePackages.isEmpty()) {
+                    val hasWarnings = hasImportWarnings(parsedResult)
+                    if (parsedResult.apps.isEmpty() && !hasWarnings) {
                         Toast.makeText(this, R.string.import_empty_file, Toast.LENGTH_SHORT).show()
                         return@rememberLauncherForActivityResult
                     }
@@ -288,13 +326,7 @@ class MainActivity : ComponentActivity() {
                         }
                         sendBroadcast(Intent(PebbleListenerService.ACTION_SEND_APP_LIST))
                     }
-                    val hasWarnings = result.skippedPackages.isNotEmpty() ||
-                        result.duplicatePackages.isNotEmpty() ||
-                        result.duplicatePositionPackages.isNotEmpty() ||
-                        result.outOfRangePackages.isNotEmpty() ||
-                        result.multipleAutoLaunch ||
-                        result.maxAppsExceeded
-                    if (hasWarnings) {
+                    if (hasImportWarnings(result)) {
                         importWarningsResult = result
                     }
                 }
@@ -304,7 +336,8 @@ class MainActivity : ComponentActivity() {
                     for (app in appsList) {
                         try {
                             val info = packageManager.getApplicationInfo(app.packageName, 0)
-                            map[app.packageName] = info.loadLabel(packageManager).toString().ifBlank { app.packageName }
+                            val label = info.loadLabel(packageManager).toString()
+                            map[app.packageName] = if (label.isBlank()) app.packageName else label
                         } catch (_: PackageManager.NameNotFoundException) {
                             map[app.packageName] = app.displayName
                         }
@@ -455,20 +488,20 @@ class MainActivity : ComponentActivity() {
                         NavigationBar {
                             NavigationBarItem(
                                 icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = stringResource(R.string.tab_apps)) },
-                                selected = selectedTab == 0,
-                                onClick = { selectedTab = 0 },
+                                selected = selectedTab == AppTab.Apps,
+                                onClick = { selectedTab = AppTab.Apps },
                                 label = { Text(stringResource(R.string.tab_apps)) }
                             )
                             NavigationBarItem(
                                 icon = { Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.tab_settings)) },
-                                selected = selectedTab == 1,
-                                onClick = { selectedTab = 1 },
+                                selected = selectedTab == AppTab.Settings,
+                                onClick = { selectedTab = AppTab.Settings },
                                 label = { Text(stringResource(R.string.tab_settings)) }
                             )
                         }
                     }
                 ) { padding ->
-                    if (selectedTab == 0) {
+                    if (selectedTab == AppTab.Apps) {
                         AppScreen(
                             apps = apps,
                             searchQuery = searchQuery,
@@ -591,7 +624,8 @@ class MainActivity : ComponentActivity() {
                         val pm = renameContext.packageManager
                         try {
                             val info = pm.getApplicationInfo(targetApp.packageName, 0)
-                            info.loadLabel(pm).toString().ifBlank { targetApp.packageName }
+                            val lbl = info.loadLabel(pm).toString()
+                            if (lbl.isBlank()) targetApp.packageName else lbl
                         } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
                             targetApp.packageName
                         }
@@ -615,7 +649,10 @@ class MainActivity : ComponentActivity() {
                                 Text(
                                     stringResource(R.string.rename_char_count, editName.length),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = if (editName.length >= 32) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = if (editName.length >= 32)
+                                        MaterialTheme.colorScheme.error
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.align(Alignment.End)
                                 )
                             }
@@ -717,13 +754,15 @@ class MainActivity : ComponentActivity() {
                                     HorizontalDivider()
                                     Text(
                                         text = getString(R.string.import_skipped_apps),
-                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
-                                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                                    )
-                                    result.skippedPackages.forEach { pkg ->
-                                        Text(
-                                            text = "  $pkg",
-                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                                        style = MaterialTheme.typography.bodySmall
+                                            .copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                                         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                     )
+                                     result.skippedPackages.forEach { pkg ->
+                                         Text(
+                                             text = "  $pkg",
+                                             style = MaterialTheme.typography.bodySmall
+                                                 .copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(start = 8.dp)
                                         )
@@ -734,13 +773,15 @@ class MainActivity : ComponentActivity() {
                                     HorizontalDivider()
                                     Text(
                                         text = getString(R.string.import_duplicate_packages),
-                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
-                                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                                    )
-                                    result.duplicatePackages.forEach { pkg ->
-                                        Text(
-                                            text = "  $pkg",
-                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                                        style = MaterialTheme.typography.bodySmall
+                                            .copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                                         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                     )
+                                     result.duplicatePackages.forEach { pkg ->
+                                         Text(
+                                             text = "  $pkg",
+                                             style = MaterialTheme.typography.bodySmall
+                                                 .copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(start = 8.dp)
                                         )
@@ -751,13 +792,15 @@ class MainActivity : ComponentActivity() {
                                     HorizontalDivider()
                                     Text(
                                         text = getString(R.string.import_duplicate_positions),
-                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
-                                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                                    )
-                                    result.duplicatePositionPackages.forEach { pkg ->
-                                        Text(
-                                            text = "  $pkg",
-                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                                        style = MaterialTheme.typography.bodySmall
+                                            .copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                                         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                     )
+                                     result.duplicatePositionPackages.forEach { pkg ->
+                                         Text(
+                                             text = "  $pkg",
+                                             style = MaterialTheme.typography.bodySmall
+                                                 .copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(start = 8.dp)
                                         )
@@ -768,13 +811,15 @@ class MainActivity : ComponentActivity() {
                                     HorizontalDivider()
                                     Text(
                                         text = getString(R.string.import_position_out_of_range),
-                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
-                                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                                    )
-                                    result.outOfRangePackages.forEach { pkg ->
-                                        Text(
-                                            text = "  $pkg",
-                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                                        style = MaterialTheme.typography.bodySmall
+                                            .copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                                         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                     )
+                                     result.outOfRangePackages.forEach { pkg ->
+                                         Text(
+                                             text = "  $pkg",
+                                             style = MaterialTheme.typography.bodySmall
+                                                 .copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(start = 8.dp)
                                         )
@@ -785,13 +830,15 @@ class MainActivity : ComponentActivity() {
                                     HorizontalDivider()
                                     Text(
                                         text = getString(R.string.import_multiple_auto_launch),
-                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
-                                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                                    )
-                                    result.multipleAutoLaunchPackages.forEach { pkg ->
-                                        Text(
-                                            text = "  $pkg",
-                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                                        style = MaterialTheme.typography.bodySmall
+                                            .copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                                         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                     )
+                                     result.multipleAutoLaunchPackages.forEach { pkg ->
+                                         Text(
+                                             text = "  $pkg",
+                                             style = MaterialTheme.typography.bodySmall
+                                                 .copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(start = 8.dp)
                                         )
@@ -802,8 +849,9 @@ class MainActivity : ComponentActivity() {
                                     HorizontalDivider()
                                     Text(
                                         text = getString(R.string.import_max_apps_exceeded),
-                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
-                                        modifier = Modifier.padding(top = 8.dp)
+                                        style = MaterialTheme.typography.bodySmall
+                                            .copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                                         modifier = Modifier.padding(top = 8.dp)
                                     )
                                 }
                             }

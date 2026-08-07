@@ -1,7 +1,8 @@
 package com.le0xff.plauncher.util
 
 /**
- * pLauncher Companion App — Converts Android app icons to Pebble-specific formats: 4-bit color (1024 bytes) and 1-bit B/W (128 bytes) at 32x32 resolution.
+ * pLauncher Companion App — Converts Android app icons to Pebble-specific formats:
+ * 4-bit color (1024 bytes) and 1-bit B/W (128 bytes) at 32x32 resolution.
  *
  * @author Le0xFF
  */
@@ -16,6 +17,19 @@ import com.le0xff.plauncher.data.AppLogBuffer
 
 object IconConverter {
     private const val ICON_SIZE = 32
+    private const val ALPHA_THRESHOLD = 128
+    private const val QUANTIZE_SHIFT = 6
+    private const val QUANTIZE_BITS = 3
+    private const val LUMINANCE_R_WEIGHT = 0.299
+    private const val LUMINANCE_G_WEIGHT = 0.587
+    private const val LUMINANCE_B_WEIGHT = 0.114
+    private const val LUMINANCE_THRESHOLD = 128
+    private const val BYTE_ALIGNMENT = 4
+    private const val BITS_PER_BYTE = 8
+    private const val BYTE_SHIFT = 3
+    private const val MAX_DRAWABLE_SIZE = 512
+    private const val MIN_DRAWABLE_SIZE = 1
+    private const val BYTE_ALIGN_MASK = 0xFC
 
     // Quantize each pixel to 4-bit RGBA: 2 bits each for alpha, red, green, blue. Packs into 1024 bytes (32x32).
     fun convertToPebbleColorIcon(bitmap: Bitmap): ByteArray {
@@ -31,11 +45,14 @@ object IconConverter {
             val r = Color.red(pixel)
             val g = Color.green(pixel)
             val b = Color.blue(pixel)
-            val a8 = if (a >= 128) 3 else 0
-            val r8 = (r.shr(6)) and 3
-            val g8 = (g.shr(6)) and 3
-            val b8 = (b.shr(6)) and 3
-            result[i] = ((a8 shl 6) or (r8 shl 4) or (g8 shl 2) or b8).toByte()
+            val a8 = if (a >= ALPHA_THRESHOLD) QUANTIZE_BITS else 0
+            val r8 = (r.shr(QUANTIZE_SHIFT)) and QUANTIZE_BITS
+            val g8 = (g.shr(QUANTIZE_SHIFT)) and QUANTIZE_BITS
+            val b8 = (b.shr(QUANTIZE_SHIFT)) and QUANTIZE_BITS
+            val packed = (a8 shl QUANTIZE_SHIFT) or
+                    (r8 shl (QUANTIZE_SHIFT - QUANTIZE_BITS)) or
+                    (g8 shl (QUANTIZE_BITS - 1)) or b8
+            result[i] = packed.toByte()
         }
         return result
     }
@@ -47,7 +64,7 @@ object IconConverter {
         scaled.getPixels(pixels, 0, ICON_SIZE, 0, 0, ICON_SIZE, ICON_SIZE)
         scaled.recycle()
 
-        val bytesPerRow = ((ICON_SIZE + 7) / 8 + 3) and 0xFC
+        val bytesPerRow = ((ICON_SIZE + BITS_PER_BYTE - 1) / BITS_PER_BYTE + BYTE_ALIGNMENT - 1) and BYTE_ALIGN_MASK
         val result = ByteArray(ICON_SIZE * bytesPerRow)
 
         for (y in 0 until ICON_SIZE) {
@@ -57,11 +74,11 @@ object IconConverter {
                 val r = Color.red(pixel)
                 val g = Color.green(pixel)
                 val b = Color.blue(pixel)
-                val luminance = 0.299 * r + 0.587 * g + 0.114 * b
-                val bit = if (luminance >= 128) 1 else 0
-                val bitIndex = x and 7
-                val byteOffset = rowBase + (x shr 3)
-                result[byteOffset] = ((result[byteOffset].toInt() or (bit shl (7 - bitIndex))).toByte())
+                val luminance = LUMINANCE_R_WEIGHT * r + LUMINANCE_G_WEIGHT * g + LUMINANCE_B_WEIGHT * b
+                val bit = if (luminance >= LUMINANCE_THRESHOLD) 1 else 0
+                val bitIndex = x and (BITS_PER_BYTE - 1)
+                val byteOffset = rowBase + (x shr BYTE_SHIFT)
+                result[byteOffset] = ((result[byteOffset].toInt() or (bit shl (BITS_PER_BYTE - 1 - bitIndex))).toByte())
             }
         }
         return result
@@ -73,21 +90,9 @@ object IconConverter {
             val appInfo = pm.getApplicationInfo(packageName, 0)
             val drawable = pm.getApplicationIcon(appInfo)
             val bitmap = if (drawable is AdaptiveIconDrawable) {
-                val w = drawable.intrinsicWidth.coerceAtMost(512).coerceAtLeast(1)
-                val h = drawable.intrinsicHeight.coerceAtMost(512).coerceAtLeast(1)
-                val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(b)
-                drawable.setBounds(0, 0, canvas.width, canvas.height)
-                drawable.draw(canvas)
-                b
+                createBitmapFromDrawable(drawable, true)
             } else {
-                val w = drawable.intrinsicWidth.coerceAtMost(512)
-                val h = drawable.intrinsicHeight.coerceAtMost(512)
-                val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(b)
-                drawable.setBounds(0, 0, canvas.width, canvas.height)
-                drawable.draw(canvas)
-                b
+                createBitmapFromDrawable(drawable, false)
             }
             val colorBytes = convertToPebbleColorIcon(bitmap)
             val bwBytes = convertToPebbleBwIcon(bitmap)
@@ -98,5 +103,25 @@ object IconConverter {
             AppLogBuffer.debug("IconConverter", "Icon not found for: $packageName")
             Pair(null, null)
         }
+    }
+
+    private fun createBitmapFromDrawable(drawable: android.graphics.drawable.Drawable, isAdaptive: Boolean): Bitmap {
+        val w = if (isAdaptive) {
+            drawable.intrinsicWidth.coerceAtMost(MAX_DRAWABLE_SIZE)
+                .coerceAtLeast(MIN_DRAWABLE_SIZE)
+        } else {
+            drawable.intrinsicWidth.coerceAtMost(MAX_DRAWABLE_SIZE)
+        }
+        val h = if (isAdaptive) {
+            drawable.intrinsicHeight.coerceAtMost(MAX_DRAWABLE_SIZE)
+                .coerceAtLeast(MIN_DRAWABLE_SIZE)
+        } else {
+            drawable.intrinsicHeight.coerceAtMost(MAX_DRAWABLE_SIZE)
+        }
+        val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(b)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        return b
     }
 }
