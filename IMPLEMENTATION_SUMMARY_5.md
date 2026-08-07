@@ -529,7 +529,7 @@ Added 32×32 app icons to the Pebble watchapp, transmitted from the Android comp
 
 - **Previous state**: The watchapp displayed only app names and index. No visual identification of apps was possible beyond text.
 - **Icon size**: 32×32 chosen as the best compromise between visibility and resource constraints. 24×24 was too small on both displays. 48×48 would require icon chunking (exceeding AppMessage limits) and consume excessive RAM on basalt. 32×32 fits within the AppMessage buffer (1,024 B icon + ~120 B header = ~1,144 B < 2,048 B buffer) and leaves sufficient heap.
-- **Color format (GColor8)**: Each pixel = 1 byte `0bAARRGGBB` (AA=alpha 2-bit, RR=red 2-bit, GG=green 2-bit, BB=blue 2-bit). 32×32 = 1,024 bytes. Android conversion: scale to 32×32, quantize ARGB_8888 → GColor8 (`r8=(r>>6)&3`, `g8=(g>>6)&3`, `b8=(b>>6)&3`, `a8=if(a>=128) 3 else 0`).
+- **Color format (GColor8)**: Each pixel = 1 byte `0bAARRGGBB` (AA=alpha 2-bit, RR=red 2-bit, GG=green 2-bit, BB=blue 2-bit). 32×32 = 1,024 bytes. Android conversion: scale to 32×32, quantize ARGB_8888 → GColor8 (`r2=(r>>6)&0b11`, `g2=(g>>6)&0b11`, `b2=(b>>6)&0b11`, `a2=if(a>=128) 0b11 else 0`), pack with non-overlapping shifts (`a2<<6 | r2<<4 | g2<<2 | b2<<0`). Initial implementation used 3-bit masks with overlapping shifts causing a blue tint; fixed to 2-bit masks matching `GColor8` layout exactly.
 - **B/W format (1-bit)**: Each pixel = 1 bit (MSB first), rows padded to 4 bytes (32-bit alignment). 32 pixels = 4 bytes/row × 32 rows = 128 bytes. Android conversion: scale to 32×32, luminance threshold (`Y = 0.299R + 0.587G + 0.114B`, `Y>=128 → 1`), pack row-major with padding.
 - **Memory watch**: Basalt (color): 20 apps × (1,024 + 1 + 32 + 64) = 22,860 B icons + metadata. Total RAM footprint ~29,165 B, free heap ~36,371 B (within 64 KB). Emery (color): same footprint, 128 KB heap — no concern.
 - **AppMessage**: Increased buffer from 1,024 to 2,048 bytes to accommodate 32×32 color icons (1,024 B) plus name, package, and dictionary header (~120 B) within a single message.
@@ -623,22 +623,33 @@ Required because 32×32 color icons (1,024 B) plus dictionary header (~120 B) ex
 **Icon conversion — Color** (`IconConverter.kt`):
 ```kotlin
 fun convertToPebbleColorIcon(bitmap: Bitmap): ByteArray {
-    val scaled = Bitmap.createScaledBitmap(bitmap, 32, 32, true)
-    val pixels = IntArray(32 * 32)
-    scaled.getPixels(pixels, 0, 32, 0, 0, 32, 32)
+    val scaled = Bitmap.createScaledBitmap(bitmap, ICON_SIZE, ICON_SIZE, true)
+    val pixels = IntArray(ICON_SIZE * ICON_SIZE)
+    scaled.getPixels(pixels, 0, ICON_SIZE, 0, 0, ICON_SIZE, ICON_SIZE)
     scaled.recycle()
-    val result = ByteArray(32 * 32)
+    val result = ByteArray(ICON_SIZE * ICON_SIZE)
     for (i in pixels.indices) {
-        val a8 = if (Color.alpha(pixels[i]) >= 128) 3 else 0
-        val r8 = (Color.red(pixels[i]) shr 6) and 3
-        val g8 = (Color.green(pixels[i]) shr 6) and 3
-        val b8 = (Color.blue(pixels[i]) shr 6) and 3
-        result[i] = ((a8 shl 6) or (r8 shl 4) or (g8 shl 2) or b8).toByte()
+        val pixel = pixels[i]
+        val a = Color.alpha(pixel)
+        val r = Color.red(pixel)
+        val g = Color.green(pixel)
+        val b = Color.blue(pixel)
+        val a2 = if (a >= ALPHA_THRESHOLD) ALPHA_FULL else 0
+        val r2 = (r.shr(QUANTIZE_SHIFT)) and COLOR_BIT_MASK
+        val g2 = (g.shr(QUANTIZE_SHIFT)) and COLOR_BIT_MASK
+        val b2 = (b.shr(QUANTIZE_SHIFT)) and COLOR_BIT_MASK
+        val packed = (a2 shl ALPHA_SHIFT) or
+                (r2 shl RED_SHIFT) or
+                (g2 shl GREEN_SHIFT) or
+                (b2 shl BLUE_SHIFT)
+        result[i] = packed.toByte()
     }
     return result
 }
 ```
-Scales to 32×32, quantizes ARGB_8888 to GColor8 (4 colors per channel = 16 colors × 2 alpha levels = 32 possible pixel values).
+Scales to 32×32, quantizes ARGB_8888 to GColor8 (4 colors per channel = 16 colors × 2 alpha levels = 32 possible pixel values). Constants: `COLOR_BIT_MASK = 0b11` (2-bit mask per channel), `ALPHA_FULL = 0b11` (opaque alpha), `QUANTIZE_SHIFT = 6` (bit shift for extraction), `ALPHA_SHIFT = 6`, `RED_SHIFT = 4`, `GREEN_SHIFT = 2`, `BLUE_SHIFT = 0` (non-overlapping bit positions matching Pebble SDK `GColor8` layout).
+
+**Bug fix** (post-implementation): The initial implementation used `QUANTIZE_BITS = 3` (`0b111`, 3-bit mask) with overlapping shifts (`r8 shl 3`, `g8 shl 2`, `b8 shl 0`), causing channels to overlap at bits 2 and 4 and produce a blue tint on rendered icons. Fixed by switching to 2-bit masks (`0b11`) with non-overlapping shifts matching the `GColor8` struct exactly (A: bits 7-6, R: bits 5-4, G: bits 3-2, B: bits 1-0).
 
 **Icon conversion — B/W** (`IconConverter.kt`):
 ```kotlin
@@ -756,6 +767,8 @@ Icon centered on name area (left portion), vertically centered with text below. 
 **Graceful degradation**: Apps without icons still display correctly (hidden icon layer, name + index as before). Icon size mismatches are silently rejected, preventing corruption from stale data.
 
 **AdaptiveIconDrawable handling**: Android adaptive icons are rendered to a bitmap using the full drawable (both foreground and background layers), ensuring consistent appearance across icon types.
+
+**GColor8 packing fix**: The initial implementation used `QUANTIZE_BITS = 3` (`0b111`) as a 3-bit mask with overlapping shifts (`r8 shl 3`, `g8 shl 2`, `b8 shl 0`), causing R/G/B channels to overlap at bits 2 and 4. This produced a blue tint on all rendered icons. Fixed by switching to `COLOR_BIT_MASK = 0b11` (2-bit mask) with non-overlapping shifts (`ALPHA_SHIFT=6`, `RED_SHIFT=4`, `GREEN_SHIFT=2`, `BLUE_SHIFT=0`), matching the Pebble SDK `GColor8` struct layout exactly.
 
 ---
 
