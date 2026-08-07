@@ -11,6 +11,8 @@ espressoCore = "3.6.1"
 pebblekit2 = "1.2.0"
 reorderable = "3.1.0"
 snakeyaml = "2.3"
+detekt = "2.0.0-alpha.5"
+detekt-compose = "0.6.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -31,8 +33,10 @@ snakeyaml = { group = "org.yaml", name = "snakeyaml", version.ref = "snakeyaml" 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxJUnit" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+detekt-compose-rules = { group = "io.nlopez.compose.rules", name = "detekt", version.ref = "detekt-compose" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+detekt = { id = "dev.detekt", version.ref = "detekt" }
