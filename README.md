@@ -55,3 +55,20 @@ See [COMPILE_INSTRUCTIONS.md](COMPILE_INSTRUCTIONS.md) for prerequisites, detail
 ## License
 
 This project is licensed under AGPLv3. See [LICENSE.md](LICENSE.md).
+
+## AI Disclosure
+
+I have no C (actually I do but not this much) nor Kotlin knowledge or experience.  
+Everything was vibecoded, except for app icons ([pLauncher_apk.kra](apk/pLauncher_apk.kra) and [pLauncher_pbw.kra](pbw/pLauncher_pbw.kra)), which were designed completely by hand.  
+Code could be completely stupid, shitty and worse than everything in this world.
+
+But as far as I can tell, *it works on my machine*.
+
+Applications were tested on `basalt` and `emery` watches, with companion app installed on an Android 13 device.
+
+## Repo structure
+
+### Branches
+
+- `main`: all code ends up here, no AI related stuff here.
+- `vibecoded`: actual development branch, all AI related is there, could be seen as `devel` branch.
