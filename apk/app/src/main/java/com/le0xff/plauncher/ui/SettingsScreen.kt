@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.le0xff.plauncher.PbwInstaller
 import com.le0xff.plauncher.R
@@ -536,10 +537,16 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.weight(1f))
 
+        val githubRepoUrl = stringResource(R.string.github_repo_url)
         Text(
             text = stringResource(R.string.settings_version),
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.align(Alignment.CenterHorizontally)
+            style = MaterialTheme.typography.bodySmall.copy(textDecoration = TextDecoration.Underline),
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                    val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(githubRepoUrl))
+                    context.startActivity(intent)
+                }
         )
     }
 }
