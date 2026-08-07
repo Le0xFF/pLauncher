@@ -1,7 +1,8 @@
 package com.le0xff.plauncher
 
 /**
- * pLauncher Companion App — Utility for installing the bundled .pbw watchapp: checks availability, reads metadata, stages to cache, triggers Pebble app installer.
+ * pLauncher Companion App — Utility for installing the bundled .pbw watchapp:
+ * checks availability, reads metadata, stages to cache, triggers Pebble installer.
  *
  * @author Le0xFF
  */
@@ -19,11 +20,16 @@ object PbwInstaller {
     private const val ASSET_INFO = "pbw_info.txt"
 
     fun isBundled(context: Context): Boolean =
-        runCatching { context.assets.open(ASSET_PBW).close() }.isSuccess
+        runCatching {
+            val stream = context.assets.open(ASSET_PBW)
+            stream.close()
+        }.isSuccess
 
     fun getInfo(context: Context): PbwInfo {
         return runCatching {
-            val lines = context.assets.open(ASSET_INFO).bufferedReader().use { it.readLines() }
+            val stream = context.assets.open(ASSET_INFO)
+            val reader = stream.bufferedReader()
+            val lines = reader.use { it.readLines() }
             var version = "unknown"
             var md5 = "unknown"
             for (line in lines) {
@@ -42,8 +48,11 @@ object PbwInstaller {
         val dir = File(context.cacheDir, "pbw").apply { mkdirs() }
         val out = File(dir, ASSET_PBW)
         return runCatching {
-            context.assets.open(ASSET_PBW).use { input ->
-                out.outputStream().use { input.copyTo(it) }
+            val input = context.assets.open(ASSET_PBW)
+            input.use { src ->
+                out.outputStream().use { dest ->
+                    src.copyTo(dest)
+                }
             }
             out
         }.getOrNull()

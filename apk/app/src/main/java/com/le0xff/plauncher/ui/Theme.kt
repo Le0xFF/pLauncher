@@ -18,37 +18,42 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+private val AmoledSurface = Color(AndroidColor.BLACK)
+private val AmoledOnSurface = Color.White
+private val AmoledSurfaceContainer = Color(0xFF1A1A1A)
+private val AmoledSurfaceContainerHighest = Color(0xFF222222)
+private val AmoledSurfaceContainerLow = Color(0xFF0A0A0A)
+
 enum class AppTheme {
     Light,
     Dark,
     Amoled
 }
 
-@Composable
 fun getAppThemeColorScheme(theme: AppTheme): ColorScheme = when (theme) {
     AppTheme.Light -> lightColorScheme()
     AppTheme.Dark -> darkColorScheme()
     AppTheme.Amoled -> darkColorScheme().copy(
-        surface = Color(AndroidColor.BLACK),
-        onSurface = Color.White,
-        surfaceVariant = Color(AndroidColor.BLACK),
-        onSurfaceVariant = Color.White,
-        surfaceContainer = Color(0xFF1A1A1A),
-        surfaceContainerHigh = Color(0xFF1A1A1A),
-        surfaceContainerHighest = Color(0xFF222222),
-        surfaceContainerLow = Color(0xFF0A0A0A),
-        surfaceContainerLowest = Color(AndroidColor.BLACK),
-        surfaceBright = Color(AndroidColor.BLACK),
-        surfaceDim = Color(AndroidColor.BLACK),
-        background = Color(AndroidColor.BLACK),
-        onBackground = Color.White,
-        inverseSurface = Color(AndroidColor.BLACK),
-        inverseOnSurface = Color.White,
+        surface = AmoledSurface,
+        onSurface = AmoledOnSurface,
+        surfaceVariant = AmoledSurface,
+        onSurfaceVariant = AmoledOnSurface,
+        surfaceContainer = AmoledSurfaceContainer,
+        surfaceContainerHigh = AmoledSurfaceContainer,
+        surfaceContainerHighest = AmoledSurfaceContainerHighest,
+        surfaceContainerLow = AmoledSurfaceContainerLow,
+        surfaceContainerLowest = AmoledSurface,
+        surfaceBright = AmoledSurface,
+        surfaceDim = AmoledSurface,
+        background = AmoledSurface,
+        onBackground = AmoledOnSurface,
+        inverseSurface = AmoledSurface,
+        inverseOnSurface = AmoledOnSurface,
     )
 }
 
 @Composable
-fun pLauncherTheme(
+fun PLauncherTheme(
     theme: AppTheme,
     content: @Composable () -> Unit
 ) {

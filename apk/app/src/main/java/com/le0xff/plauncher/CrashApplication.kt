@@ -1,7 +1,8 @@
 package com.le0xff.plauncher
 
 /**
- * pLauncher Companion App — Application subclass that installs a custom uncaught exception handler for crash reporting when the setting is enabled.
+ * pLauncher Companion App — Application subclass that installs a custom uncaught
+ * exception handler for crash reporting when the setting is enabled.
  *
  * @author Le0xFF
  */
@@ -18,7 +19,13 @@ import java.lang.Thread.UncaughtExceptionHandler
 
 class CrashApplication : Application() {
 
-    // Check crash reporting setting; if enabled, install default uncaught exception handler that saves report and launches CrashReportActivity.
+    companion object {
+        private const val MAX_STACK_TRACE_LENGTH = 2000
+        private const val EXIT_CODE_CRASH = 2
+    }
+
+    // Check crash reporting setting; if enabled, install custom uncaught exception
+    // handler that saves report and launches CrashReportActivity.
     override fun onCreate() {
         super.onCreate()
 
@@ -34,11 +41,13 @@ class CrashApplication : Application() {
             val enabled = prefs.getBoolean("generate_crash_reports", false)
             if (!enabled) {
                 android.os.Process.killProcess(android.os.Process.myPid())
-                System.exit(2)
+                System.exit(EXIT_CODE_CRASH)
             }
             val crashReport = buildCrashReport(ex)
 
-            prefs.edit().putString("last_crash_report", crashReport).commit()
+            val editor = prefs.edit()
+            editor.putString("last_crash_report", crashReport)
+            editor.commit()
 
             val intent = Intent(this, CrashReportActivity::class.java)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
@@ -50,13 +59,13 @@ class CrashApplication : Application() {
             }
 
             android.os.Process.killProcess(android.os.Process.myPid())
-            System.exit(2)
+            System.exit(EXIT_CODE_CRASH)
         })
     }
 
     private fun buildCrashReport(ex: Throwable): String {
         val stackTrace = ex.stackTraceToString()
-        val truncatedStack = if (stackTrace.length > 2000) stackTrace.substring(0, 2000) else stackTrace
+        val truncatedStack = if (stackTrace.length > MAX_STACK_TRACE_LENGTH) stackTrace.substring(0, MAX_STACK_TRACE_LENGTH) else stackTrace
 
         val appVersion = try {
             packageManager.getPackageInfo(applicationContext.packageName, 0).versionName

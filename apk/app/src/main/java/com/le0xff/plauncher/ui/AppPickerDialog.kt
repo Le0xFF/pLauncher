@@ -10,11 +10,31 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -24,6 +44,9 @@ import com.le0xff.plauncher.R
 import com.le0xff.plauncher.model.LaunchApp
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
+
+private const val PickerIconSize = 48
+private const val PickerColumnHeight = 400
 
 /**
  * Dialog for selecting installed apps to add to the launcher. Shows search, system app filtering, and selection limit.
@@ -35,7 +58,7 @@ fun AppPickerDialog(
     onDismiss: () -> Unit,
     onConfirm: (List<LaunchApp>) -> Unit,
     maxApps: Int,
-    modifier: Modifier = Modifier
+    @Suppress("UnusedParameter") modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val installedApps = remember(context) { getInstalledLaunchableApps(context) }
@@ -75,20 +98,28 @@ fun AppPickerDialog(
             }
         },
         text = {
-            Column(modifier = Modifier.height(400.dp)) {
+            Column(modifier = Modifier.height(PickerColumnHeight.dp)) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     placeholder = { Text(stringResource(R.string.placeholder_search)) },
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
                     singleLine = true
                 )
-                LazyColumn(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
+                LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight()
+                    ) {
                     items(filteredBySearch, key = { it.packageName }) { app ->
                         val isSelected = localSelected.contains(app.packageName)
                         val checkboxDisabled = isAtLimit && !isSelected
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Checkbox(
@@ -103,7 +134,8 @@ fun AppPickerDialog(
                                 }
                             )
                             val iconBitmap = remember(app.packageName) {
-                                app.icon?.toBitmap(48, 48)?.asImageBitmap()
+                                val bmp = app.icon?.toBitmap(PickerIconSize, PickerIconSize)
+                                bmp?.asImageBitmap()
                             }
                             iconBitmap?.let { bitmap ->
                                 Image(
@@ -115,7 +147,10 @@ fun AppPickerDialog(
                             Text(
                                 app.name,
                                 modifier = Modifier.weight(1f),
-                                color = if (checkboxDisabled && !isSelected) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                                color = if (checkboxDisabled && !isSelected)
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                else
+                                    MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }

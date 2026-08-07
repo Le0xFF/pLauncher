@@ -8,6 +8,6 @@
 
 #define STR_LOADING_MESSAGE "Loading..."
 
-const char* str_empty_message(void);
+const char *str_empty_message(void);
 
 #endif

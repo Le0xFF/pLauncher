@@ -19,8 +19,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -28,8 +26,26 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -37,6 +53,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.le0xff.plauncher.PbwInstaller
 import com.le0xff.plauncher.R
+
+private const val VibrationNone = 0
+private const val VibrationShort = 1
+private const val VibrationLong = 2
+private const val VibrationDouble = 3
 
 /**
  * Settings screen: expandable accordion panels for general, watchapp, import/export, permissions, install, and debug options.
@@ -71,7 +92,12 @@ fun SettingsScreen(
     var debugExpanded by remember { mutableStateOf(false) }
     var importExportExpanded by remember { mutableStateOf(false) }
 
-    Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+    Column(
+            modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+        ) {
         Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -162,10 +188,10 @@ fun SettingsScreen(
             onExpandedChange = { watchappExpanded = it }
         ) {
             val vibeLabels = mapOf(
-                0 to stringResource(R.string.settings_vibration_none),
-                1 to stringResource(R.string.settings_vibration_short),
-                2 to stringResource(R.string.settings_vibration_long),
-                3 to stringResource(R.string.settings_vibration_double)
+                VibrationNone to stringResource(R.string.settings_vibration_none),
+                VibrationShort to stringResource(R.string.settings_vibration_short),
+                VibrationLong to stringResource(R.string.settings_vibration_long),
+                VibrationDouble to stringResource(R.string.settings_vibration_double)
             )
             var vibeExpanded by remember { mutableStateOf(false) }
             Row(
@@ -243,7 +269,11 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = stringResource(R.string.settings_auto_launch), style = MaterialTheme.typography.bodyLarge)
-                    Text(text = stringResource(R.string.settings_auto_launch_desc), style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                    Text(
+                        text = stringResource(R.string.settings_auto_launch_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2
+                    )
                 }
                 Switch(checked = autoLaunch, onCheckedChange = onAutoLaunchChange)
             }

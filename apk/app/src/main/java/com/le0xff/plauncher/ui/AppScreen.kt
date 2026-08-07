@@ -1,7 +1,8 @@
 package com.le0xff.plauncher.ui
 
 /**
- * pLauncher Companion App — Home screen composable. Displays the app list with search, sort, drag-to-reorder, and add/remove/rename actions.
+ * pLauncher Companion App — Home screen composable. Displays the app list with
+ * search, sort, drag-to-reorder, and add/remove/rename actions.
  *
  * @author Le0xFF
  */
@@ -10,24 +11,37 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material.icons.Icons
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.SortByAlpha
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -40,6 +54,9 @@ import com.le0xff.plauncher.model.SortOrder
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.ReorderableCollectionItemScope
 import sh.calvin.reorderable.rememberReorderableLazyListState
+
+private const val AppListItemIconSize = 72
+private const val AppListItemCircleAlpha = 0.3f
 
 /**
  * Home screen: searchable app list with drag-to-reorder, sort, add/remove/rename actions, and auto-launch target selector.
@@ -148,7 +165,11 @@ fun AppScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                Text(if (apps.isEmpty()) stringResource(R.string.appscreen_empty) else stringResource(R.string.appscreen_no_match), style = typography.bodyMedium)
+                Text(
+                    if (apps.isEmpty()) stringResource(R.string.appscreen_empty)
+                    else stringResource(R.string.appscreen_no_match),
+                    style = typography.bodyMedium
+                )
             }
         } else {
             LazyColumn(
@@ -171,7 +192,8 @@ fun AppScreen(
                             val pm = context.packageManager
                             val info = pm.getApplicationInfo(app.packageName, 0)
                             val drawable = info.loadIcon(pm)
-                            drawable?.toBitmap(72, 72)?.asImageBitmap()
+                            val d = drawable?.toBitmap(AppListItemIconSize, AppListItemIconSize)
+                            d?.asImageBitmap()
                         } catch (_: PackageManager.NameNotFoundException) {
                             null
                         } catch (_: Exception) {
@@ -193,7 +215,8 @@ fun AppScreen(
                             onRenameApp = onRenameApp,
                             onRemoveApp = onRemoveApp,
                             colorScheme = colorScheme,
-                            typography = typography
+                            typography = typography,
+                            modifier = Modifier
                         )
                     }
                     }
@@ -230,11 +253,13 @@ fun AppListItem(
     onAutoLaunchTargetChange: (Int) -> Unit,
     onRenameApp: (LaunchApp) -> Unit,
     onRemoveApp: (LaunchApp) -> Unit,
-    colorScheme: ColorScheme,
-    typography: Typography
+    colorScheme: androidx.compose.material3.ColorScheme,
+    typography: androidx.compose.material3.Typography,
+    modifier: Modifier = Modifier
 ) {
                     Row(
                         modifier = Modifier
+                            .then(modifier)
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 4.dp)
                             .then(
@@ -285,7 +310,7 @@ fun AppListItem(
                             } else {
                                 colorScheme.onSurfaceVariant
                             }
-                            val circleAlpha = if (autoLaunchEnabled) 1f else 0.3f
+                            val circleAlpha = if (autoLaunchEnabled) 1f else AppListItemCircleAlpha
                             IconButton(
                                 onClick = { onAutoLaunchTargetChange(appIndex) },
                                 enabled = autoLaunchEnabled,
