@@ -122,9 +122,12 @@ if [ "$TARGET" = "--apk" ]; then
     convert "$SOURCE" -resize 144x144 "${RES_DIR}/mipmap-xxhdpi/ic_launcher.png"
     convert "$SOURCE" -resize 192x192 "${RES_DIR}/mipmap-xxxhdpi/ic_launcher.png"
 
-    # --- Foreground drawable (full-res, nodpi) ---
+    # --- Foreground drawable (full-res, drawable/) ---
+    # Stored in drawable/ (not drawable-nodpi/) so ic_launcher_foreground.xml's
+    # @drawable/ic_launcher_bitmap reference resolves within the same resource
+    # directory, working correctly in system UI contexts (e.g. overlay permission screen).
     printf "Copying foreground drawable...\n"
-    cp "$SOURCE" "${RES_DIR}/drawable-nodpi/ic_launcher_bitmap.png"
+    cp "$SOURCE" "${RES_DIR}/drawable/ic_launcher_bitmap.png"
 
     # --- Background drawable XML ---
     printf "Writing background drawable...\n"
@@ -223,7 +226,7 @@ EOF
     identify "${RES_DIR}/mipmap-xhdpi/ic_launcher.png"
     identify "${RES_DIR}/mipmap-xxhdpi/ic_launcher.png"
     identify "${RES_DIR}/mipmap-xxxhdpi/ic_launcher.png"
-    identify "${RES_DIR}/drawable-nodpi/ic_launcher_bitmap.png"
+    identify "${RES_DIR}/drawable/ic_launcher_bitmap.png"
     identify "${RES_DIR}/drawable-nodpi/splash_logo.png"
     printf "\nXML files:\n"
     find "${RES_DIR}/drawable" -name "*.xml" -print
