@@ -178,7 +178,7 @@ detekt {
     baseline = file("$rootDir/config/detekt-baseline.xml")
     buildUponDefaultConfig = true
     allRules = false
-    ignoreFailures = true
+    ignoreFailures = false
     parallel = true
 }
 
@@ -189,6 +189,18 @@ tasks.named("detektMain") {
 val lintApk = tasks.register("lintApk") {
     dependsOn(exportApkIcon)
     dependsOn(tasks.named("detektMain"))
+}
+
+val commitHooks = tasks.register<Copy>("commitHooks") {
+    from("../../config/hooks/")
+    into("../../.git/hooks")
+    filePermissions {
+        unix("rwxr-xr-x")
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(commitHooks)
 }
 
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
