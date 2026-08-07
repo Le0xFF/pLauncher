@@ -2,7 +2,7 @@
 
 ## Icon Generation
 
-Before building either app, generate the icon resources from the Krita project files:
+Icons are generated manually from the Krita project files using `generate_icon.sh`. Icon generation is **not** part of the automatic Gradle build flow — it must be run explicitly whenever icons are modified:
 
 ```bash
 # Generate Android companion app icons (mipmaps, adaptive icon, splash)
@@ -101,16 +101,46 @@ This runs without spawning a Gradle daemon, produces verbose output, and saves t
 
 ### Integrated Build Flow
 
-The Gradle build automatically handles the watchapp as part of the APK compilation:
+The Gradle build automatically handles the watchapp and linting as part of the APK compilation:
 
-1. **`exportPbwIcon`**: Runs `generate_icon.sh pbw/pLauncher_pbw.kra --pbw` to export the Pebble menu icon from the KRA file.
-2. **`buildWatchapp`**: Runs `pebble build` to compile the watchapp for `basalt` and `emery`. Depends on `exportPbwIcon`.
-3. **`bundleWatchPbw`**: Copies the resulting `.pbw` into `apk/app/src/main/assets/` as `plauncher.pbw`. Skipped with a warning if the `.pbw` does not exist.
-4. **`generatePbwInfo`**: Generates `pbw_info.txt` with version and MD5 checksum. Skipped with a warning if the `.pbw` does not exist.
+1. **`commitHooks`**: Copies files from `config/hooks/` to `.git/hooks/` (e.g., the pre-commit hook). Runs on every build so hooks are installed automatically after a fresh clone.
+2. **`lintPbw`**: Runs `clang-format --dry-run --Werror` on `pbw/src/c/*.c` and `*.h` to verify C code formatting. Uses `isIgnoreExitValue = true` and logs a warning on failure.
+3. **`buildWatchapp`**: Runs `pebble build` to compile the watchapp for `basalt` and `emery`. Depends on `lintPbw`.
+4. **`bundleWatchPbw`**: Copies the resulting `.pbw` into `apk/app/src/main/assets/` as `plauncher.pbw`. Skipped with a warning if the `.pbw` does not exist.
+5. **`generatePbwInfo`**: Generates `pbw_info.txt` with version and MD5 checksum. Skipped with a warning if the `.pbw` does not exist.
+6. **`lintApk`**: Runs `detektMain` to verify Kotlin code against `apk/config/detekt.yml`. Uses `ignoreFailures = false` — violations block the build.
 
-All four tasks use `isIgnoreExitValue = true` and log warnings on failure. The APK still compiles even if the Pebble SDK is unavailable or the watchapp build fails — the warnings make failed steps visible in the output.
+Icon export tasks (`exportPbwIcon`, `exportApkIcon`) are **commented out** in the build file to prevent icon regeneration on every build. Icons must be generated manually using `generate_icon.sh` (see "Icon Generation" above).
 
-If you need to regenerate the Android icons separately (after editing `apk/pLauncher_apk.kra`), run `./generate_icon.sh apk/pLauncher_apk.kra --apk` before building. The Gradle build does **not** automatically regenerate Android icons — it only handles the Pebble icon export.
+`buildWatchapp` uses `isIgnoreExitValue = true` and logs warnings on failure. The APK still compiles even if the Pebble SDK is unavailable or the watchapp build fails — the warnings make failed steps visible in the output.
+
+### Pre-commit Hook
+
+After the first build, a pre-commit hook is automatically installed in `.git/hooks/pre-commit`. The hook runs on every `git commit`:
+
+- **clang-format**: Checks staged `.c` and `.h` files in `pbw/src/c/` against `pbw/.clang-format`. Blocks the commit if formatting rules are violated.
+- **detekt**: Runs `./gradlew detektMain` on the APK. Blocks the commit if linting rules are violated.
+
+The hook script lives in `config/hooks/pre-commit` (tracked in git) and is copied to `.git/hooks/` by the `commitHooks` Gradle task on every build.
+
+**Prerequisites for the hook**: `clang-format` must be available in PATH. The hook exits with a clear error message if it is not installed.
+
+### Manual Lint Commands
+
+You can run linting independently of commits or builds:
+
+```bash
+# Check C code formatting (dry run)
+cd pbw/
+find src/c -name "*.c" -o -name "*.h" | xargs clang-format --dry-run --Werror --style=file
+
+# Fix C code formatting (in-place)
+find src/c -name "*.c" -o -name "*.h" | xargs clang-format -i
+
+# Check Kotlin code (runs detektMain)
+cd apk/
+./gradlew detektMain
+```
 
 ### Output
 
@@ -140,6 +170,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - **Missing SDK**: Install the required Android SDK components via `sdkmanager` or Android Studio SDK Manager.
 - **PebbleKit2 version conflicts**: The project uses `io.rebble.pebblekit2:client:1.2.0`. Check the [PebbleKitAndroid2 repository](https://github.com/pebble-dev/PebbleKitAndroid2) for compatibility notes.
 - **Compose compilation errors**: Ensure Kotlin version matches Compose compiler version in `app/build.gradle.kts`.
-- **`exportPbwIcon` warning**: If Krita is not available or the KRA export fails, you'll see a warning but the APK still builds. Ensure `krita` is in PATH and a display server is available.
 - **`buildWatchapp` warning**: If the Pebble SDK is not installed or `pebble build` fails, you'll see a warning. The APK bundles the previous `.pbw` (if any) or no watchapp at all.
 - **`bundleWatchPbw` / `generatePbwInfo` skipped**: These tasks skip silently if `pbw/build/pbw.pbw` does not exist (e.g., after a failed `pebble build`). Warnings are logged.
+- **`lintPbw` warning**: If `clang-format` is not installed or finds formatting violations, you'll see a warning. The build still completes. Install `clang-format` or fix formatting with `clang-format -i`.
+- **`lintApk` failure**: Detekt runs with `ignoreFailures = false`. If violations are found, the build fails. Fix the violations or update the baseline with `./gradlew detektGenerateBaseline`.
+- **Pre-commit hook fails**: Ensure `clang-format` is in PATH. If detekt blocks commits, run `./gradlew detektMain` from `apk/` to see the violations and fix them before committing.
