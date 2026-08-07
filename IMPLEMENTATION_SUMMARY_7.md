@@ -505,3 +505,107 @@ Running `./gradlew assembleDebug` automatically executes the full chain in order
 **Zero behavior changes to existing tasks**: The existing `exportPbwIcon`, `buildWatchapp`, `bundleWatchPbw`, and `generatePbwInfo` tasks remain functionally unchanged. Only their dependency chain was extended.
 
 **Unchanged**: All existing functionality preserved. Protocol, UI, feature set, and build output remain identical.
+
+---
+
+## #35 — Pre-commit Lint Hook per pLauncher
+
+### Overview
+
+Added a pre-commit Git hook that automatically runs linting checks on staged files before every `git commit`. The hook verifies clang-format formatting for staged C files (`pbw/`) and runs detekt for the Android companion app (`apk/`). If linting rules are not met, the commit fails. The hook is installed automatically via a Gradle `commitHooks` task that copies files from `config/hooks/` to `.git/hooks/` on every build, replicating the mechanism used by PebbleNotificationCenter2.
+
+### Analysis
+
+**Previous state**: No pre-commit hook existed. Linting was only available as manual Gradle tasks (`lintPbw`, `lintApk`) or during the build flow. Developers could commit code that violated formatting or linting rules.
+
+**Reference project**: `PebbleNotificationCenter2/mobile/config/hooks/pre-commit` and `PebbleNotificationCenter2/mobile/buildSrc/build.gradle.kts` provided the template for the hook script and the Gradle `commit-hooks` task.
+
+**Key differences from PebbleNotificationCenter2**:
+- pLauncher has no `buildSrc` — the `commitHooks` task lives in `apk/app/build.gradle.kts`
+- The task hooks into `preBuild` (not `jar`) so it runs on every build
+- Paths adjusted: from `apk/app/`, hooks are at `../../config/hooks/` and `.git/hooks` is at `../../.git/hooks/`
+- The hook checks both C code (clang-format) and Kotlin code (detekt), unlike PebbleNotificationCenter2 which only checks Kotlin
+
+### Implementation Steps
+
+| Step | Scope | Files | Changes |
+|---|---|---|---|
+| 1 | Create pre-commit script + Gradle task | 2 | Created `config/hooks/pre-commit`, added `commitHooks` task, set `ignoreFailures = false` |
+| 2 | End-to-end verification | 0 (temporary test files restored) | Verified hook blocks commits on clang-format violations, detekt violations, and allows clean commits |
+
+### Files Created
+
+| File | Purpose |
+|---|---|
+| `config/hooks/pre-commit` | Bash script that runs clang-format on staged C files and detekt on the APK |
+
+### Files Modified
+
+| File | Changes |
+|---|---|
+| `apk/app/build.gradle.kts` | Added `commitHooks` task (copies hooks from `../../config/hooks/` to `../../.git/hooks/` with executable permissions), wired to `preBuild`; changed `ignoreFailures = false` in `detekt { }` block |
+
+### Pre-commit Hook Script
+
+The script performs two checks:
+
+1. **clang-format (PBW)**: Uses `git diff --cached --name-only --diff-filter=ACM` to find staged `.c` and `.h` files under `pbw/src/c/`, then runs `clang-format --dry-run --Werror --style=file` only on those files. Skips if no staged C files. Exits with error if `clang-format` is not installed.
+
+2. **detekt (APK)**: Runs `./gradlew detektMain -q` from the `apk/` directory. Since `ignoreFailures = false` is set in `build.gradle.kts`, detekt failures cause the build (and commit) to fail. Skips if `apk/gradlew` is not found.
+
+**Root detection**: The script handles being installed in either `config/hooks/` (tracked location) or `.git/hooks/` (installed location) by detecting if the parent directory is `.git/` and navigating accordingly.
+
+### Gradle `commitHooks` Task
+
+```kotlin
+val commitHooks = tasks.register<Copy>("commitHooks") {
+    from("../../config/hooks/")
+    into("../../.git/hooks")
+    filePermissions {
+        unix("rwxr-xr-x")
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(commitHooks)
+}
+```
+
+- Copies all files from `config/hooks/` to `.git/hooks/` on every build
+- Sets executable permissions on the copied files
+- Linked to `preBuild` so it runs automatically with any Gradle build
+
+### `ignoreFailures` Change
+
+Changed `ignoreFailures = true` → `ignoreFailures = false` in the `detekt { }` block of `apk/app/build.gradle.kts`. This ensures detekt failures block both the Gradle build and the pre-commit hook. Note: this means the build flow's `lintApk` step (which runs detekt) will now block `assembleDebug` if violations exist. The existing `detekt-baseline.xml` covers historical violations, so the clean codebase passes.
+
+### Verification Results
+
+| Test | Expected | Result |
+|---|---|---|
+| Hook installed after build | `.git/hooks/pre-commit` exists, executable | PASS |
+| clang-format violation (staged C file) | Commit blocked | PASS (exit code 1) |
+| detekt violation (staged Kotlin file) | Commit blocked | PASS (exit code 1, MagicNumber) |
+| Clean commit | Commit succeeds | PASS (exit code 0) |
+
+All test files were restored to their original state after verification.
+
+### Build Status
+
+- `./gradlew assembleDebug` — BUILD SUCCESSFUL (59 tasks)
+- `clang-format --dry-run --Werror` — zero violations on PBW
+- `./gradlew detektMain` — BUILD SUCCESSFUL (0 violations)
+
+### Design Decisions
+
+**Staged files only for clang-format**: The hook uses `git diff --cached` to only check staged C files, matching standard pre-commit hook behavior. This avoids blocking commits due to unformatted files that the developer hasn't touched.
+
+**Full detekt run for APK**: Unlike clang-format which only checks staged files, detekt runs on the entire APK source tree. This is because detekt rules like `MagicNumber` and complexity checks are meaningful across the full codebase, and the `detekt-baseline.xml` ensures historical violations don't trigger failures.
+
+**Dynamic root detection**: The hook calculates the repository root by checking if its parent directory is `.git/`. When installed in `.git/hooks/`, it goes up two levels; when in `config/hooks/`, it goes up one level. This ensures the script works from both locations.
+
+**No CLI `--ignore-failures` flag**: The plan initially specified `./gradlew detektMain --ignore-failures=false`, but this CLI flag doesn't exist for detekt. The `ignoreFailures` setting is configured in `build.gradle.kts` only. The hook simply runs `./gradlew detektMain -q` and relies on the build file configuration.
+
+**`ignoreFailures = false` impacts build flow**: Changing `ignoreFailures` from `true` to `false` means the build flow's `lintApk` step now blocks `assembleDebug` if detekt finds violations. This is intentional — it ensures code quality is enforced both at commit time and at build time. The existing baseline covers pre-existing violations.
+
+**Unchanged**: All existing functionality preserved. Protocol, UI, feature set, and build output remain identical.
