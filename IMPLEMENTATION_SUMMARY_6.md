@@ -285,7 +285,7 @@ Added a proper app icon to the Android companion app (`apk/`). Implemented legac
 | `app/src/main/res/mipmap-xhdpi/ic_launcher.png` | Legacy icon 96×96 px. |
 | `app/src/main/res/mipmap-xxhdpi/ic_launcher.png` | Legacy icon 144×144 px. |
 | `app/src/main/res/mipmap-xxxhdpi/ic_launcher.png` | Legacy icon 192×192 px. |
-| `app/src/main/res/drawable-nodpi/ic_launcher_bitmap.png` | Full-res source image for adaptive icon foreground and splash. |
+| `app/src/main/res/drawable/ic_launcher_bitmap.png` | Full-res source image for adaptive icon foreground. Referenced by `ic_launcher_foreground.xml` via `@drawable/ic_launcher_bitmap`. Moved from `drawable-nodpi/` to fix system permission screen display (see bug fix below). |
 | `app/src/main/res/drawable-nodpi/splash_logo.png` | Splash screen image: logo trimmed to content, composited on magenta `#cf62a9` background. Generated via Python PIL. |
 | `app/src/main/res/drawable/ic_launcher_background.xml` | Solid magenta `#cf62a9` shape drawable for adaptive icon background. |
 | `app/src/main/res/drawable/ic_launcher_foreground.xml` | `<inset>` with 12dp margins pointing to `@drawable/ic_launcher_bitmap`. Scales logo to fit within safe zone. |
@@ -303,7 +303,7 @@ Added a proper app icon to the Android companion app (`apk/`). Implemented legac
 
 ### Key Implementation Details
 
-**Circular reference fix**: The original plan had `ic_launcher_foreground.xml` reference `@mipmap/ic_launcher`. On API 26+, `@mipmap/ic_launcher` resolves to the adaptive icon XML itself, creating a circular reference. Android silently falls back to a default icon. Fixed by copying the source image to `drawable-nodpi/ic_launcher_bitmap.png` and having the foreground reference `@drawable/ic_launcher_bitmap` instead.
+**Circular reference fix**: The original plan had `ic_launcher_foreground.xml` reference `@mipmap/ic_launcher`. On API 26+, `@mipmap/ic_launcher` resolves to the adaptive icon XML itself, creating a circular reference. Android silently falls back to a default icon. Fixed by copying the source image to `drawable/ic_launcher_bitmap.png` and having the foreground reference `@drawable/ic_launcher_bitmap` instead. The bitmap lives in `drawable/` (not `drawable-nodpi/`) so the reference resolves within the same resource directory — see bug fix section below for why this matters.
 
 **Foreground inset sizing**: The adaptive icon canvas is 108 dp with a 66 dp safe zone (21 dp margin). Testing showed:
 - 21dp inset (plan default): Logo appeared too small compared to other apps
@@ -367,7 +367,7 @@ SIZE=$(identify -format "%wx%h" "$SOURCE")
 |---|---|---|
 | Android Manifest | 1 | ~4 (icon attributes, theme changes) |
 | Mipmap PNGs | 5 | New (generated) |
-| Drawable PNGs | 2 | New (foreground copy, splash) |
+| Drawable PNGs | 2 | New (foreground in `drawable/`, splash in `drawable-nodpi/`) |
 | Drawable XML | 3 | New (background, foreground, splash) |
 | Mipmap XML | 2 | New (adaptive icon, round) |
 | Theme XML | 2 | New (values, values-v29) |
@@ -389,7 +389,7 @@ SIZE=$(identify -format "%wx%h" "$SOURCE")
 
 **Fixed output path**: The PNG is always written to `apk/pLauncher.png` regardless of input format. This ensures the Android project references a stable location, and the generation script can always find the PNG for downstream processing.
 
-**Foreground as drawable, not mipmap reference**: Avoids circular reference on API 26+. The source image is stored in `drawable-nodpi/` (no density scaling) so Android uses it at full resolution and scales to the adaptive icon canvas.
+**Foreground as drawable, not mipmap reference**: Avoids circular reference on API 26+. The source image is stored in `drawable/` so the foreground's `@drawable/ic_launcher_bitmap` reference resolves within the same resource directory. Originally placed in `drawable-nodpi/`, this caused a cross-directory reference that some device system UIs (notably Samsung's `ACTION_MANAGE_OVERLAY_PERMISSION` screen) failed to resolve, falling back to the default Android robot icon and the package name instead of the app label. Moved to `drawable/` to fix this.
 
 **Inset over bitmap for foreground**: `<inset>` with 12dp margins ensures the logo fits within the adaptive icon safe zone across all launcher mask shapes (circle, squircle, teardrop). Tested values: 0dp clips edges, 21dp too small, 12dp balanced.
 
@@ -402,6 +402,14 @@ SIZE=$(identify -format "%wx%h" "$SOURCE")
 **Source image preserved**: The original `pLauncher.kra` stays in the project root. The script exports and transforms it as needed. Users regenerate all resources by running `./generate_icon.sh pLauncher.kra`.
 
 **Unchanged**: Pebble watch app, communication protocol, existing Android app features. All existing functionality remains fully operational.
+
+### Bug Fix: Adaptive Icon Not Displayed on System Permission Screen
+
+**Problem**: On some devices (Samsung), the `ACTION_MANAGE_OVERLAY_PERMISSION` system screen showed the default Android robot icon and the package name (`com.le0xff.plauncher`) instead of the app's custom icon and label ("pLauncher"). This occurred because `ic_launcher_foreground.xml` (in `drawable/`) referenced `@drawable/ic_launcher_bitmap`, but the bitmap lived in `drawable-nodpi/`. The system's PackageManager used a Resources context that could not resolve this cross-directory reference, causing the entire adaptive icon to fail and fall back to the Android default.
+
+**Fix**: Moved `ic_launcher_bitmap.png` from `drawable-nodpi/` to `drawable/`. The `@drawable/ic_launcher_bitmap` reference in `ic_launcher_foreground.xml` now resolves within the same resource directory, working correctly in all system contexts. The `generate_icon.sh` script was also updated to output the bitmap to `drawable/`, so re-running the script after KRA edits will maintain the fix.
+
+**Verification**: Build passes, system permission screen now shows the correct icon and "pLauncher" label. Legacy mipmaps, splash screen, and adaptive icon descriptors are unchanged.
 
 ## #29 — Watchapp Launcher Icon and Build Integration
 
