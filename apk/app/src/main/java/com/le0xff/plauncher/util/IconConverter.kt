@@ -18,8 +18,13 @@ import com.le0xff.plauncher.data.AppLogBuffer
 object IconConverter {
     private const val ICON_SIZE = 32
     private const val ALPHA_THRESHOLD = 128
+    private const val COLOR_BIT_MASK = 0b11
+    private const val ALPHA_FULL = 0b11
     private const val QUANTIZE_SHIFT = 6
-    private const val QUANTIZE_BITS = 3
+    private const val ALPHA_SHIFT = 6
+    private const val RED_SHIFT = 4
+    private const val GREEN_SHIFT = 2
+    private const val BLUE_SHIFT = 0
     private const val LUMINANCE_R_WEIGHT = 0.299
     private const val LUMINANCE_G_WEIGHT = 0.587
     private const val LUMINANCE_B_WEIGHT = 0.114
@@ -45,13 +50,14 @@ object IconConverter {
             val r = Color.red(pixel)
             val g = Color.green(pixel)
             val b = Color.blue(pixel)
-            val a8 = if (a >= ALPHA_THRESHOLD) QUANTIZE_BITS else 0
-            val r8 = (r.shr(QUANTIZE_SHIFT)) and QUANTIZE_BITS
-            val g8 = (g.shr(QUANTIZE_SHIFT)) and QUANTIZE_BITS
-            val b8 = (b.shr(QUANTIZE_SHIFT)) and QUANTIZE_BITS
-            val packed = (a8 shl QUANTIZE_SHIFT) or
-                    (r8 shl (QUANTIZE_SHIFT - QUANTIZE_BITS)) or
-                    (g8 shl (QUANTIZE_BITS - 1)) or b8
+            val a2 = if (a >= ALPHA_THRESHOLD) ALPHA_FULL else 0
+            val r2 = (r.shr(QUANTIZE_SHIFT)) and COLOR_BIT_MASK
+            val g2 = (g.shr(QUANTIZE_SHIFT)) and COLOR_BIT_MASK
+            val b2 = (b.shr(QUANTIZE_SHIFT)) and COLOR_BIT_MASK
+            val packed = (a2 shl ALPHA_SHIFT) or
+                    (r2 shl RED_SHIFT) or
+                    (g2 shl GREEN_SHIFT) or
+                    (b2 shl BLUE_SHIFT)
             result[i] = packed.toByte()
         }
         return result
