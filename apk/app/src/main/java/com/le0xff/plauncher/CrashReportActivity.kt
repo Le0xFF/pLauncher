@@ -9,6 +9,7 @@ package com.le0xff.plauncher
 
 import android.content.Intent
 import android.os.Bundle
+import java.util.Date
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
