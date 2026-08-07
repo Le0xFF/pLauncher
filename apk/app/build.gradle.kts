@@ -71,23 +71,23 @@ val pbwDir = rootProject.projectDir.parentFile?.resolve("pbw") ?: file("../pbw")
 val watchPbw = pbwDir.resolve("build/pbw.pbw")
 val generateIconScript = rootProject.projectDir.parentFile?.resolve("generate_icon.sh") ?: file("../generate_icon.sh")
 
-val exportPbwIcon = tasks.register<Exec>("exportPbwIcon") {
-    workingDir = rootProject.projectDir.parentFile
-    commandLine = listOf(generateIconScript.toString(), "pbw/pLauncher_pbw.kra", "--pbw")
-    isIgnoreExitValue = true
-    standardOutput = System.out
-    errorOutput = System.err
-
-    doLast {
-        val exitCode = executionResult.get().exitValue
-        if (exitCode != 0) {
-            logger.warn("WARNING: exportPbwIcon failed (exit code $exitCode). The watchapp menu icon will not be updated.")
-        }
-    }
-}
+// val exportPbwIcon = tasks.register<Exec>("exportPbwIcon") {
+//     workingDir = rootProject.projectDir.parentFile
+//     commandLine = listOf(generateIconScript.toString(), "pbw/pLauncher_pbw.kra", "--pbw")
+//     isIgnoreExitValue = true
+//     standardOutput = System.out
+//     errorOutput = System.err
+//
+//     doLast {
+//         val exitCode = executionResult.get().exitValue
+//         if (exitCode != 0) {
+//             logger.warn("WARNING: exportPbwIcon failed (exit code $exitCode). The watchapp menu icon will not be updated.")
+//         }
+//     }
+// }
 
 val lintPbw = tasks.register<Exec>("lintPbw") {
-    dependsOn(exportPbwIcon)
+    // dependsOn(exportPbwIcon)
     workingDir = pbwDir
     commandLine = listOf("sh", "-c", "find src/c -name \"*.c\" -o -name \"*.h\" -print0 | xargs -0 clang-format --dry-run --Werror --style=file")
     isIgnoreExitValue = true
@@ -158,20 +158,20 @@ val generatePbwInfo = tasks.register("generatePbwInfo") {
     }
 }
 
-val exportApkIcon = tasks.register<Exec>("exportApkIcon") {
-    workingDir = rootProject.projectDir.parentFile
-    commandLine = listOf(generateIconScript.toString(), "apk/pLauncher_apk.kra", "--apk")
-    isIgnoreExitValue = true
-    standardOutput = System.out
-    errorOutput = System.err
-
-    doLast {
-        val exitCode = executionResult.get().exitValue
-        if (exitCode != 0) {
-            logger.warn("WARNING: exportApkIcon failed (exit code $exitCode). The Android app icons will not be updated.")
-        }
-    }
-}
+// val exportApkIcon = tasks.register<Exec>("exportApkIcon") {
+//     workingDir = rootProject.projectDir.parentFile
+//     commandLine = listOf(generateIconScript.toString(), "apk/pLauncher_apk.kra", "--apk")
+//     isIgnoreExitValue = true
+//     standardOutput = System.out
+//     errorOutput = System.err
+//
+//     doLast {
+//         val exitCode = executionResult.get().exitValue
+//         if (exitCode != 0) {
+//             logger.warn("WARNING: exportApkIcon failed (exit code $exitCode). The Android app icons will not be updated.")
+//         }
+//     }
+// }
 
 detekt {
     config.setFrom("$rootDir/config/detekt.yml")
@@ -182,12 +182,12 @@ detekt {
     parallel = true
 }
 
-tasks.named("detektMain") {
-    dependsOn(exportApkIcon)
-}
+// tasks.named("detektMain") {
+//     dependsOn(exportApkIcon)
+// }
 
 val lintApk = tasks.register("lintApk") {
-    dependsOn(exportApkIcon)
+    // dependsOn(exportApkIcon)
     dependsOn(tasks.named("detektMain"))
 }
 
