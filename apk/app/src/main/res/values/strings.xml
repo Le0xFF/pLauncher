@@ -80,6 +80,7 @@
     <string name="button_grant">Grant</string>
     <string name="button_revoke">Revoke</string>
     <string name="settings_version">v1.0.0</string>
+    <string name="github_repo_url">https://github.com/Le0xFF/pLauncher</string>
     <string name="picker_title">Pick Apps</string>
     <string name="placeholder_search">Search...</string>
     <string name="button_done">Done</string>
