@@ -59,7 +59,13 @@ This project is licensed under AGPLv3. See [LICENSE.md](LICENSE.md).
 ## AI Disclosure
 
 I have no C (actually I do but not this much) nor Kotlin knowledge or experience.  
-Everything was vibecoded, except for app icons ([pLauncher_apk.kra](apk/pLauncher_apk.kra) and [pLauncher_pbw.kra](pbw/pLauncher_pbw.kra)), which were designed completely by hand.  
+Everything was vibecoded with:
+
+- VScodium + KiloCode extension
+- llama.cpp
+- Qwen3.6-27B
+
+except for app icons ([pLauncher_apk.kra](apk/pLauncher_apk.kra) and [pLauncher_pbw.kra](pbw/pLauncher_pbw.kra)), which were designed completely by hand.  
 Code could be completely stupid, shitty and worse than everything in this world.
 
 But as far as I can tell, *it works on my machine*.
