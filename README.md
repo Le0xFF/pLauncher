@@ -1,39 +1,57 @@
 # pLauncher
 
-A Pebble smartwatch app and Android companion app that lets you launch smartphone applications directly from your Pebble watch.
+A Pebble watch app and Android companion app that lets you launch smartphone applications directly from your Pebble watch.
+
+## Overview
+
+pLauncher displays a configurable list of smartphone apps on your Pebble watch. The Android companion app manages the app list and syncs it to the watch. Navigate the list on your watch, select an app, and it launches on your paired phone.
+
+## Screenshots
+
+<details>
+    <summary>Watchapp (pbw)</summary>
+    <img alt="pbw_1" src="images/pbw_1.jpg">
+</details>
+
+<details>
+    <summary>Companion app (apk)</summary>
+    <img alt="apk_1" src="images/apk_1.png">
+    <img alt="apk_2" src="images/apk_2.png">
+    <img alt="apk_3" src="images/apk_3.png">
+    <img alt="apk_4" src="images/apk_4.png">
+    <img alt="apk_5" src="images/apk_5.png">
+    <img alt="apk_6" src="images/apk_6.png">
+    <img alt="apk_7" src="images/apk_7.png">
+</details>
+
+## Components
+
+- **Watch App** (`pbw/`): Pebble watch app written in C (Pebble SDK v3). Displays app names and icons, handles navigation and launch requests. See [pbw/README.md](pbw/README.md) for features and details.
+- **Companion App** (`apk/`): Android app built with Kotlin and Jetpack Compose. Manages the app list, maintains the Pebble connection via a foreground service, and handles settings. See [apk/README.md](apk/README.md) for features and details.
 
 ## How It Works
 
-The Android companion app manages a list of apps you want to launch from your watch. The list is synced to the Pebble watch via AppMessage. On the watch, you scroll through the list and select an app to launch it on your phone.
+The companion app manages the list of apps you want to launch. The list is synced to the watch via AppMessage over Bluetooth. On the watch, you navigate through the apps using the UP/DOWN buttons and press SELECT to launch. The companion app receives the launch request and opens the selected app on your phone.
 
-## Features
+## Quick Start
 
-- **Watch App**: Scroll through your configured apps and launch them with button presses
-- **Companion App**: Manage which apps appear on the watch, pick from installed apps, configure settings
-- **System Apps Toggle**: Optionally include system applications in the app picker
-- **Search**: Filter apps by name in the companion app
+```sh
+# Build the watch app
+cd pbw/ && pebble build
 
-## Button Controls (Watch)
+# Build the companion app
+cd apk/ && ./gradlew assembleDebug
+```
 
-- **UP/DOWN**: Scroll through the list of configured apps
-- **SELECT**: Launch the currently highlighted app on your phone
-- **BACK**: Close the launcher and return to the watch face
+See [COMPILE_INSTRUCTIONS.md](COMPILE_INSTRUCTIONS.md) for prerequisites, detailed build steps, icon generation, and troubleshooting.
 
-## Companion App Screens
+## Documentation
 
-- **App List**: Shows the apps currently configured for the watch, with a "+" button to add more
-- **Settings**: Toggle options like "Show system apps"
-- **App Picker Dialog**: Browse installed apps, search, and select which ones to add to the watch
+- [pbw/README.md](pbw/README.md) — Watch app features and details
+- [apk/README.md](apk/README.md) — Companion app features and details
+- [COMPILE_INSTRUCTIONS.md](COMPILE_INSTRUCTIONS.md) — Complete build instructions for both apps
+- [COMMUNICATION_PROTOCOL.md](COMMUNICATION_PROTOCOL.md) — AppMessage protocol specification (watch ↔ companion)
 
-## Communication
+## License
 
-The watch and companion app communicate via PebbleKit Android 2 and AppMessage. See `COMMUNICATION_PROTOCOL.md` for the protocol specification.
-
-## Build Instructions
-
-See `COMPILE_INSTRUCTIONS.md` for detailed build steps for both the watch app and Android companion app.
-
-## Quick Build Commands
-
-- **Watch App**: `pebble build` (run from `pbw/` directory)
-- **Android App**: `./gradlew assembleDebug` (run from `apk/` directory)
+This project is licensed under AGPLv3. See [LICENSE.md](LICENSE.md).
