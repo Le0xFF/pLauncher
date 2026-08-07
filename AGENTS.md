@@ -54,6 +54,15 @@ See `COMPILE_INSTRUCTIONS.md` for detailed build steps, prerequisites, and troub
 - **Pebble watch app (`pbw/`)**: every string must be defined as a `#define` or `const` in a dedicated header and referenced from the source code.
 - All strings must be written in **English** regardless of the developer's language.
 
+## Linting rules
+
+Both apps must pass linting checks before code can be committed. A pre-commit hook enforces this automatically.
+
+- **Pebble watch app (`pbw/`)**: C code must pass `clang-format --dry-run --Werror --style=file` (config in `pbw/.clang-format`). Format code with `clang-format -i`.
+- **Android companion app (`apk/`)**: Kotlin code must pass `detekt` (config in `apk/config/detekt.yml`, baseline in `apk/config/detekt-baseline.xml`). Run `./gradlew detektMain` from `apk/`.
+- The pre-commit hook (`config/hooks/pre-commit`) runs both checks on every `git commit`. It is installed automatically by the `commitHooks` Gradle task on every build.
+- New code must comply with all active linting rules. Do not bypass rules by modifying the config or baseline without explicit approval.
+
 ## Development rules
 
 - One feature per subagent
@@ -61,6 +70,7 @@ See `COMPILE_INSTRUCTIONS.md` for detailed build steps, prerequisites, and troub
 - Use webfetch/MCP for research when needed
 - File organization: each functionality in its own file, no monolithic files
 - Every step must compile; errors must be resolved before proceeding
+- All code must pass linting checks (clang-format for PBW, detekt for APK)
 - User review after every step
 
 ## Pebble SDK include paths
