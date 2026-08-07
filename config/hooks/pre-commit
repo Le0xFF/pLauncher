@@ -1,0 +1,34 @@
+#!/bin/bash
+set -e
+
+# Calculate the repository root (hook may be in config/hooks/ or .git/hooks/)
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# If we ended up in .git/, go up one more level
+if [ -d "$ROOT/hooks" ]; then
+    ROOT="$(cd "$ROOT/.." && pwd)"
+fi
+cd "$ROOT"
+
+echo "=== pLauncher pre-commit: linting pbw (clang-format) ==="
+if ! command -v clang-format &> /dev/null; then
+    echo "ERROR: clang-format is not installed. Please install it." >&2
+    exit 1
+fi
+STAGED_C=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(c|h)$' | grep '^pbw/src/c/' || true)
+if [ -z "$STAGED_C" ]; then
+    echo "No staged C files. Skipping C linting." >&2
+else
+    echo "$STAGED_C" | xargs clang-format --dry-run --Werror --style=file
+    echo "pbw linting passed."
+fi
+
+echo "=== pLauncher pre-commit: linting apk (detekt) ==="
+if [ ! -f "apk/gradlew" ]; then
+    echo "WARNING: apk/gradlew not found. Skipping detekt linting." >&2
+else
+    cd apk
+    ./gradlew detektMain -q
+    echo "apk linting passed."
+fi
+
+echo "=== All pre-commit checks passed. ==="
