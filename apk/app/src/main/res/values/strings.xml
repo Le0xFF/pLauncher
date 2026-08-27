@@ -37,9 +37,14 @@
     <string name="notif_disconnected">Disconnected \u2014 waiting...</string>
     <string name="notif_title">pLauncher</string>
     <string name="settings_title">Settings</string>
-    <string name="settings_section_general">General</string>
+    <string name="settings_section_general">Companion app settings</string>
     <string name="settings_section_permissions">Permissions</string>
     <string name="settings_show_system_apps">Show system apps</string>
+    <string name="settings_play_on_launch">Play on launch</string>
+    <string name="settings_play_on_launch_desc">Resume music playback when an app from the list is launched</string>
+    <string name="settings_play_on_launch_timeout">Resume timeout (s)</string>
+    <string name="settings_play_on_launch_timeout_desc">How long to keep waiting for the app\'s media session after launch (1-60 seconds)</string>
+    <string name="settings_play_on_launch_timeout_placeholder">e.g. 30</string>
     <string name="settings_generate_crash_reports">Generate crash reports</string>
     <string name="settings_crash_reports_desc">Show crash details when the app crashes</string>
     <string name="settings_section_debug">Debug</string>
@@ -58,6 +63,8 @@
     <string name="settings_granted">Granted</string>
     <string name="settings_ignore_battery">Ignore Battery Optimizations</string>
     <string name="settings_ignore_battery_desc">Prevents aggressive service killing</string>
+    <string name="settings_notification_access">Notification access</string>
+    <string name="settings_notification_access_desc">Required to resume music playback of launched apps</string>
     <string name="settings_section_watchapp">Watchapp settings</string>
     <string name="settings_vibration">Vibration on launch</string>
     <string name="settings_vibration_desc">Haptic feedback when an app launches</string>
