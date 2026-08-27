@@ -53,7 +53,7 @@ If the app list exceeds AppMessage size limits (~1400 bytes), send multiple pack
 
 ## Settings
 
-No settings sync from watch to phone. The watch only launches apps. Settings (e.g., "show system apps") are managed entirely in the Android companion app. The vibration preference and auto-close preference are synchronized from the phone to the watch on connection and when changed.
+No settings sync from watch to phone. The watch only launches apps. Settings (e.g., "show system apps") are managed entirely in the Android companion app. The vibration preference and auto-close preference are synchronized from the phone to the watch on connection and when changed. The "Play on Launch" setting is companion-app-only: it does not change the `LAUNCH_APP` packet payload and is never sent to the watch.
 
 ## Icon Formats
 
