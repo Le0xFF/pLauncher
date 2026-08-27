@@ -6,6 +6,8 @@ package com.le0xff.plauncher.ui
  * @author Le0xFF
  */
 
+import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -20,6 +22,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -41,10 +44,12 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +59,12 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.le0xff.plauncher.PbwInstaller
 import com.le0xff.plauncher.R
+import com.le0xff.plauncher.data.AppDataStore
+import com.le0xff.plauncher.media.MediaControlListenerService
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.text.input.KeyboardType
 
 private const val VibrationNone = 0
 private const val VibrationShort = 1
@@ -72,12 +83,18 @@ fun SettingsScreen(
     onGenerateCrashReportsChange: (Boolean) -> Unit,
     canDrawOverlays: Boolean,
     ignoringBatteryOpt: Boolean,
+    notificationAccessGranted: Boolean,
     currentTheme: AppTheme,
     onThemeChange: (AppTheme) -> Unit,
     vibrationPref: Int,
     onVibrationPrefChange: (Int) -> Unit,
     autoClose: Boolean,
     onAutoCloseChange: (Boolean) -> Unit,
+    playOnLaunch: Boolean,
+    onPlayOnLaunchChange: (Boolean) -> Unit,
+    playOnLaunchTimeoutS: Int,
+    onPlayOnLaunchTimeoutChange: (Int) -> Unit,
+    onPlayOnLaunchTimeoutInvalid: () -> Unit,
     autoLaunch: Boolean,
     onAutoLaunchChange: (Boolean) -> Unit,
     onExportClick: () -> Unit = {},
@@ -92,6 +109,25 @@ fun SettingsScreen(
     var installExpanded by remember { mutableStateOf(false) }
     var debugExpanded by remember { mutableStateOf(false) }
     var importExportExpanded by remember { mutableStateOf(false) }
+
+    var timeoutInput by remember { mutableStateOf(playOnLaunchTimeoutS.toString()) }
+    val timeoutInteractionSource = remember { MutableInteractionSource() }
+    val onPlayOnLaunchTimeoutInvalidRef = rememberUpdatedState(onPlayOnLaunchTimeoutInvalid)
+    val timeoutHasFocus by timeoutInteractionSource.collectIsFocusedAsState()
+    LaunchedEffect(timeoutHasFocus) {
+        if (!timeoutHasFocus && !timeoutInput.isBlank()) {
+            val parsed = timeoutInput.toIntOrNull()
+            if (parsed == null || parsed < AppDataStore.MIN_PLAY_ON_LAUNCH_TIMEOUT_S ||
+                parsed > AppDataStore.MAX_PLAY_ON_LAUNCH_TIMEOUT_S
+            ) {
+                onPlayOnLaunchTimeoutInvalidRef.value()
+            }
+        }
+    }
+    val parsedTimeout = timeoutInput.toIntOrNull()
+    val timeoutInvalid = parsedTimeout == null ||
+        parsedTimeout < AppDataStore.MIN_PLAY_ON_LAUNCH_TIMEOUT_S ||
+        parsedTimeout > AppDataStore.MAX_PLAY_ON_LAUNCH_TIMEOUT_S
 
     Column(
             modifier
@@ -178,6 +214,66 @@ fun SettingsScreen(
                     modifier = Modifier.weight(1f)
                 )
                 Switch(checked = showSystemApps, onCheckedChange = onShowSystemAppsChange)
+            }
+
+            HorizontalDivider()
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = stringResource(R.string.settings_play_on_launch), style = MaterialTheme.typography.bodyLarge)
+                    Text(text = stringResource(R.string.settings_play_on_launch_desc), style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = playOnLaunch, onCheckedChange = onPlayOnLaunchChange)
+            }
+
+            HorizontalDivider()
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = stringResource(R.string.settings_play_on_launch_timeout), style = MaterialTheme.typography.bodyLarge)
+                    Text(text = stringResource(R.string.settings_play_on_launch_timeout_desc), style = MaterialTheme.typography.bodySmall)
+                }
+                OutlinedTextField(
+                    value = timeoutInput,
+                    onValueChange = { input ->
+                        if (input.length > 2) return@OutlinedTextField
+                        if (input.isNotEmpty() && input.any { !it.isDigit() }) return@OutlinedTextField
+                        timeoutInput = input
+                        if (input.isEmpty()) {
+                            onPlayOnLaunchTimeoutInvalidRef.value()
+                            return@OutlinedTextField
+                        }
+                        val parsed = input.toIntOrNull() ?: return@OutlinedTextField
+                        if (parsed in AppDataStore.MIN_PLAY_ON_LAUNCH_TIMEOUT_S..AppDataStore.MAX_PLAY_ON_LAUNCH_TIMEOUT_S) {
+                            onPlayOnLaunchTimeoutChange(parsed)
+                        } else {
+                            onPlayOnLaunchTimeoutInvalidRef.value()
+                        }
+                    },
+                    isError = timeoutInvalid,
+                    enabled = playOnLaunch,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    placeholder = { Text(stringResource(R.string.settings_play_on_launch_timeout_placeholder)) },
+                    interactionSource = timeoutInteractionSource,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                        disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.width(84.dp)
+                )
             }
         }
 
@@ -404,6 +500,40 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            HorizontalDivider()
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = stringResource(R.string.settings_notification_access), style = MaterialTheme.typography.bodyLarge)
+                    Text(text = stringResource(R.string.settings_notification_access_desc), style = MaterialTheme.typography.bodySmall)
+                }
+                if (notificationAccessGranted) {
+                    Button(
+                        onClick = {
+                            context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Text(stringResource(R.string.button_revoke))
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                        },
+                        contentPadding = PaddingValues(horizontal = 18.dp)
+                    ) {
+                        Text(stringResource(R.string.button_grant))
+                    }
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -615,4 +745,11 @@ fun checkIgnoringBatteryOptimizations(context: Context): Boolean {
         return powerManager.isIgnoringBatteryOptimizations(context.packageName)
     }
     return true
+}
+
+fun checkNotificationListenerAccess(context: Context): Boolean {
+    val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    return nm.isNotificationListenerAccessGranted(
+        ComponentName(context.packageName, MediaControlListenerService::class.java.name)
+    )
 }

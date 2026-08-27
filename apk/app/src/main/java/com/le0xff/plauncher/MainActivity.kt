@@ -62,6 +62,7 @@ import com.le0xff.plauncher.ui.SettingsScreen
 import com.le0xff.plauncher.R
 import com.le0xff.plauncher.ui.checkCanDrawOverlays
 import com.le0xff.plauncher.ui.checkIgnoringBatteryOptimizations
+import com.le0xff.plauncher.ui.checkNotificationListenerAccess
 import com.le0xff.plauncher.ui.PLauncherTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
@@ -111,6 +112,12 @@ class AppViewModel : ViewModel() {
 
     private val _autoClose = MutableStateFlow(false)
     val autoClose: StateFlow<Boolean> = _autoClose.asStateFlow()
+
+    private val _playOnLaunch = MutableStateFlow(false)
+    val playOnLaunch: StateFlow<Boolean> = _playOnLaunch.asStateFlow()
+
+    private val _playOnLaunchTimeoutS = MutableStateFlow(30)
+    val playOnLaunchTimeoutS: StateFlow<Int> = _playOnLaunchTimeoutS.asStateFlow()
 
     private val _autoLaunchEnabled = MutableStateFlow(false)
     val autoLaunchEnabled: StateFlow<Boolean> = _autoLaunchEnabled.asStateFlow()
@@ -181,6 +188,18 @@ class AppViewModel : ViewModel() {
         _autoClose.value = value
     }
 
+    fun setPlayOnLaunch(value: Boolean) {
+        _playOnLaunch.value = value
+    }
+
+    fun setPlayOnLaunchTimeoutS(value: Int) {
+        _playOnLaunchTimeoutS.value = value
+    }
+
+    fun onPlayOnLaunchTimeoutInvalid() {
+        _playOnLaunchTimeoutS.value = AppDataStore.DEFAULT_PLAY_ON_LAUNCH_TIMEOUT_S
+    }
+
     fun setAutoLaunchEnabled(value: Boolean) {
         _autoLaunchEnabled.value = value
     }
@@ -223,6 +242,8 @@ class MainActivity : ComponentActivity() {
         viewModel.setAppTheme(appDataStore.getAppTheme())
         viewModel.setVibrationPref(appDataStore.getVibrationPref())
         viewModel.setAutoClose(appDataStore.getAutoClose())
+        viewModel.setPlayOnLaunch(appDataStore.getPlayOnLaunch())
+        viewModel.setPlayOnLaunchTimeoutS(appDataStore.getPlayOnLaunchTimeoutS())
         viewModel.setAutoLaunchEnabled(appDataStore.getAutoLaunchEnabled())
         viewModel.setAutoLaunchTarget(appDataStore.getAutoLaunchTarget())
         viewModel.setConnectionStatus(getString(R.string.status_disconnected))
@@ -268,6 +289,8 @@ class MainActivity : ComponentActivity() {
                 val resumeCounter by viewModel.resumeCounter.collectAsState()
                 val vibrationPref by viewModel.vibrationPref.collectAsState()
                 val autoClose by viewModel.autoClose.collectAsState()
+                val playOnLaunch by viewModel.playOnLaunch.collectAsState()
+                val playOnLaunchTimeoutS by viewModel.playOnLaunchTimeoutS.collectAsState()
                 val autoLaunchEnabled by viewModel.autoLaunchEnabled.collectAsState()
                 val autoLaunchTarget by viewModel.autoLaunchTarget.collectAsState()
 
@@ -278,6 +301,9 @@ class MainActivity : ComponentActivity() {
                 }
                 val ignoringBatteryOpt = remember(resumeCounter) {
                     mutableStateOf(false).apply { value = checkIgnoringBatteryOptimizations(this@MainActivity) }
+                }
+                val notificationAccessGranted = remember(resumeCounter) {
+                    mutableStateOf(false).apply { value = checkNotificationListenerAccess(this@MainActivity) }
                 }
 
                 var importPendingResult: ImportResult? by remember { mutableStateOf(null) }
@@ -554,6 +580,7 @@ class MainActivity : ComponentActivity() {
                             },
                             canDrawOverlays = canDrawOverlays.value,
                             ignoringBatteryOpt = ignoringBatteryOpt.value,
+                            notificationAccessGranted = notificationAccessGranted.value,
                             currentTheme = appTheme,
                             onThemeChange = {
                                 viewModel.setAppTheme(it)
@@ -575,6 +602,17 @@ class MainActivity : ComponentActivity() {
                                     senderHelper.sendAutoClosePref(if (it) 1u else 0u)
                                 }
                             },
+                            playOnLaunch = playOnLaunch,
+                            onPlayOnLaunchChange = {
+                                viewModel.setPlayOnLaunch(it)
+                                dataStore.setPlayOnLaunch(it)
+                            },
+                            playOnLaunchTimeoutS = playOnLaunchTimeoutS,
+                            onPlayOnLaunchTimeoutChange = { newValue ->
+                                viewModel.setPlayOnLaunchTimeoutS(newValue)
+                                dataStore.setPlayOnLaunchTimeoutS(newValue)
+                            },
+                            onPlayOnLaunchTimeoutInvalid = { viewModel.onPlayOnLaunchTimeoutInvalid() },
                             autoLaunch = autoLaunchEnabled,
                             onAutoLaunchChange = {
                                 viewModel.setAutoLaunchEnabled(it)

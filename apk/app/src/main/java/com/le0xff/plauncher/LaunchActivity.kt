@@ -16,6 +16,7 @@ class LaunchActivity : ComponentActivity() {
     companion object {
         const val ACTION_LAUNCH_RESULT = "com.le0xff.plauncher.LAUNCH_RESULT"
         private const val EXTRA_RESULT = "result"
+        const val EXTRA_PACKAGE_NAME = "package_name"
     }
 
     // Trampoline: extract package name, resolve launch intent, start target app, broadcast result, finish immediately.
@@ -33,22 +34,25 @@ class LaunchActivity : ComponentActivity() {
             try {
                 startActivity(launchIntent)
                 AppLogBuffer.info("LaunchActivity", "Launch success: $packageName")
-                sendLaunchResult(true)
+                sendLaunchResult(true, packageName)
             } catch (e: Exception) {
                 AppLogBuffer.error("LaunchActivity", "Launch failed: ${e.message}")
-                sendLaunchResult(false)
+                sendLaunchResult(false, packageName)
             }
         } else {
             AppLogBuffer.warn("LaunchActivity", "No launch intent for: $packageName")
-            sendLaunchResult(false)
+            sendLaunchResult(false, packageName)
         }
         finish()
     }
 
-    private fun sendLaunchResult(success: Boolean) {
+    private fun sendLaunchResult(success: Boolean, packageName: String? = null) {
         val intent = Intent(ACTION_LAUNCH_RESULT).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             putExtra(EXTRA_RESULT, if (success) 1 else 0)
+            if (packageName != null) {
+                putExtra(EXTRA_PACKAGE_NAME, packageName)
+            }
         }
         sendBroadcast(intent)
     }

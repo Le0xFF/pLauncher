@@ -20,7 +20,9 @@ import androidx.core.app.NotificationCompat
 import com.le0xff.plauncher.R
 import com.le0xff.plauncher.data.AppDataStore
 import com.le0xff.plauncher.data.AppLogBuffer
+import com.le0xff.plauncher.media.MediaResumeHandler
 import com.le0xff.plauncher.model.LaunchApp
+import com.le0xff.plauncher.ui.checkNotificationListenerAccess
 import com.le0xff.plauncher.protocol.KEY_APP_INDEX
 import com.le0xff.plauncher.protocol.KEY_PACKET_TYPE
 import com.le0xff.plauncher.protocol.KEY_DISPLAY_TYPE
@@ -51,6 +53,7 @@ class PebbleListenerService : BasePebbleListenerService() {
 
     private var senderHelper: PebbleSenderHelper? = null
     private var dataStore: AppDataStore? = null
+    private var mediaResumeHandler: MediaResumeHandler? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var notificationManager: NotificationManager
 
@@ -70,8 +73,18 @@ class PebbleListenerService : BasePebbleListenerService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val result = intent?.getIntExtra(EXTRA_RESULT, 0) ?: 0
             val success = result == 1
+            val packageName = intent?.getStringExtra(LaunchActivity.EXTRA_PACKAGE_NAME)
             coroutineScope.launch {
                 senderHelper?.sendLaunchConfirm(success)
+                if (success && packageName != null) {
+                    mediaResumeHandler?.let { handler ->
+                        dataStore?.let { store ->
+                            if (store.getPlayOnLaunch()) {
+                                handler.resumeInBackground(packageName, coroutineScope)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -82,7 +95,13 @@ class PebbleListenerService : BasePebbleListenerService() {
         AppLogBuffer.info("PebbleService", "Service created")
         senderHelper = PebbleSenderHelper(applicationContext)
         dataStore = AppDataStore(applicationContext)
+        mediaResumeHandler = MediaResumeHandler(applicationContext, dataStore)
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val nlsGranted = checkNotificationListenerAccess(applicationContext)
+        AppLogBuffer.info(
+            "PebbleService",
+            "Notification listener access: ${if (nlsGranted) "granted" else "not granted"}"
+        )
 
         val powerManager = getSystemService(PowerManager::class.java)
         wakeLock = powerManager.newWakeLock(
@@ -134,6 +153,7 @@ class PebbleListenerService : BasePebbleListenerService() {
         senderHelper?.close()
         senderHelper = null
         dataStore = null
+        mediaResumeHandler = null
         super.onDestroy()
     }
 

@@ -26,6 +26,11 @@ class AppDataStore(private val context: Context) {
         private const val KEY_THEME = "theme"
         private const val KEY_VIBRATION_PREF = "vibration_pref"
         private const val KEY_AUTO_CLOSE = "auto_close"
+        private const val KEY_PLAY_ON_LAUNCH = "play_on_launch"
+        private const val KEY_PLAY_ON_LAUNCH_TIMEOUT_MS = "play_on_launch_timeout_s"
+        const val DEFAULT_PLAY_ON_LAUNCH_TIMEOUT_S = 30
+        const val MIN_PLAY_ON_LAUNCH_TIMEOUT_S = 1
+        const val MAX_PLAY_ON_LAUNCH_TIMEOUT_S = 60
         private const val KEY_AUTO_LAUNCH = "auto_launch"
         private const val KEY_AUTO_LAUNCH_TARGET = "auto_launch_target"
         private const val SEP = "|"
@@ -86,6 +91,12 @@ class AppDataStore(private val context: Context) {
 
     private val _autoClose = MutableStateFlow<Boolean>(loadAutoClose())
     val autoClose: StateFlow<Boolean> = _autoClose
+
+    private val _playOnLaunch = MutableStateFlow<Boolean>(loadPlayOnLaunch())
+    val playOnLaunch: StateFlow<Boolean> = _playOnLaunch
+
+    private val _playOnLaunchTimeoutS = MutableStateFlow<Int>(loadPlayOnLaunchTimeoutS())
+    val playOnLaunchTimeoutS: StateFlow<Int> = _playOnLaunchTimeoutS
 
     private val _autoLaunchEnabled = MutableStateFlow<Boolean>(loadAutoLaunchEnabled())
     val autoLaunchEnabled: StateFlow<Boolean> = _autoLaunchEnabled
@@ -190,6 +201,34 @@ class AppDataStore(private val context: Context) {
 
     private fun loadAutoClose(): Boolean {
         return prefs.getBoolean(KEY_AUTO_CLOSE, false)
+    }
+
+    fun getPlayOnLaunch(): Boolean = _playOnLaunch.value
+
+    fun setPlayOnLaunch(value: Boolean) {
+        _playOnLaunch.value = value
+        val e = prefs.edit()
+        e.putBoolean(KEY_PLAY_ON_LAUNCH, value)
+        e.apply()
+    }
+
+    private fun loadPlayOnLaunch(): Boolean {
+        return prefs.getBoolean(KEY_PLAY_ON_LAUNCH, false)
+    }
+
+    fun getPlayOnLaunchTimeoutS(): Int = _playOnLaunchTimeoutS.value
+
+    fun setPlayOnLaunchTimeoutS(value: Int) {
+        val sanitized = value.coerceIn(MIN_PLAY_ON_LAUNCH_TIMEOUT_S, MAX_PLAY_ON_LAUNCH_TIMEOUT_S)
+        _playOnLaunchTimeoutS.value = sanitized
+        val e = prefs.edit()
+        e.putInt(KEY_PLAY_ON_LAUNCH_TIMEOUT_MS, sanitized)
+        e.apply()
+    }
+
+    private fun loadPlayOnLaunchTimeoutS(): Int {
+        return prefs.getInt(KEY_PLAY_ON_LAUNCH_TIMEOUT_MS, DEFAULT_PLAY_ON_LAUNCH_TIMEOUT_S)
+            .coerceIn(MIN_PLAY_ON_LAUNCH_TIMEOUT_S, MAX_PLAY_ON_LAUNCH_TIMEOUT_S)
     }
 
     fun getAutoLaunchEnabled(): Boolean = _autoLaunchEnabled.value
