@@ -14,9 +14,8 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
+import java.io.IOException
 import androidx.activity.ComponentActivity
-import androidx.core.content.FileProvider
-import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
@@ -371,27 +370,30 @@ class MainActivity : ComponentActivity() {
                     return map
                 }
 
-                val onExportClick: () -> Unit = {
-                    AppLogBuffer.info("MainActivity", "Export initiated")
+                var yamlExportPending by remember { mutableStateOf(false) }
+
+                val exportYamlLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.CreateDocument("text/yaml")
+                ) { uri ->
+                    if (uri == null) return@rememberLauncherForActivityResult
                     try {
                         val originalNames = buildOriginalNames(apps)
                         val yamlContent = dataStore.exportAppsToYaml(originalNames, autoLaunchTarget)
-                        val exportsDir = File(context.cacheDir, "exports")
-                        if (!exportsDir.exists()) exportsDir.mkdirs()
-                        val file = File(exportsDir, "plauncher_apps.yaml")
-                        file.writeText(yamlContent)
-                        val uri = FileProvider.getUriForFile(
-                            context, "com.le0xff.plauncher.fileprovider", file
-                        )
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/yaml"
-                            putExtra(Intent.EXTRA_STREAM, uri)
-                            putExtra(Intent.EXTRA_SUBJECT, "pLauncher app list")
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        startActivity(Intent.createChooser(shareIntent, getString(R.string.button_export)))
+                        contentResolver.openOutputStream(uri)?.use { it.write(yamlContent.toByteArray()) }
+                            ?: throw IOException("No output stream for $uri")
+                        AppLogBuffer.info("MainActivity", "App list exported to document: $uri")
+                        Toast.makeText(context, R.string.export_success, Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
-                        Toast.makeText(context, R.string.import_failed, Toast.LENGTH_SHORT).show()
+                        AppLogBuffer.error("MainActivity", "Failed to export app list to document: ${e.message}")
+                        Toast.makeText(context, R.string.export_failed, Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                val onExportClick: () -> Unit = onExport@{
+                    AppLogBuffer.info("MainActivity", "Export initiated")
+                    if (!yamlExportPending) {
+                        yamlExportPending = true
+                        exportYamlLauncher.launch("plauncher_apps.yaml")
                     }
                 }
 
@@ -404,30 +406,33 @@ class MainActivity : ComponentActivity() {
                     importLauncher.launch(intent)
                 }
 
+                var logSavePending by remember { mutableStateOf(false) }
+
+                val saveLogsLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.CreateDocument("text/plain")
+                ) { uri ->
+                    if (uri == null) return@rememberLauncherForActivityResult
+                    try {
+                        val logContent = AppLogBuffer.getLogsAsString()
+                        contentResolver.openOutputStream(uri)?.use { it.write(logContent.toByteArray()) }
+                            ?: throw IOException("No output stream for $uri")
+                        AppLogBuffer.info("MainActivity", "Logs saved to document: $uri")
+                        Toast.makeText(context, R.string.logs_saved_success, Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        AppLogBuffer.error("MainActivity", "Failed to save logs to document: ${e.message}")
+                        Toast.makeText(context, R.string.logs_saved_error, Toast.LENGTH_SHORT).show()
+                    }
+                }
+
                 val onSaveLogsClick: () -> Unit = onSaveLogs@{
                     AppLogBuffer.info("MainActivity", "Save logs initiated")
-                    try {
-                        val entries = AppLogBuffer.getEntries()
-                        if (entries.isEmpty()) {
+                    if (!logSavePending) {
+                        if (AppLogBuffer.getEntries().isEmpty()) {
                             Toast.makeText(context, R.string.logs_empty, Toast.LENGTH_SHORT).show()
                             return@onSaveLogs
                         }
-                        val logContent = AppLogBuffer.getLogsAsString()
-                        val exportsDir = File(context.cacheDir, "exports")
-                        if (!exportsDir.exists()) exportsDir.mkdirs()
-                        val file = File(exportsDir, "plauncher_logs.txt")
-                        file.writeText(logContent)
-                        val uri = FileProvider.getUriForFile(
-                            context, "com.le0xff.plauncher.fileprovider", file
-                        )
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_STREAM, uri)
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        startActivity(Intent.createChooser(shareIntent, getString(R.string.button_save_logs)))
-                    } catch (e: Exception) {
-                        Toast.makeText(context, R.string.logs_saved_error, Toast.LENGTH_SHORT).show()
+                        logSavePending = true
+                        saveLogsLauncher.launch("plauncher_logs.txt")
                     }
                 }
 
@@ -442,6 +447,8 @@ class MainActivity : ComponentActivity() {
                 var dismissedOnce by remember { mutableStateOf(false) }
 
                 LaunchedEffect(resumeCounter) {
+                    if (logSavePending) logSavePending = false
+                    if (yamlExportPending) yamlExportPending = false
                     if (!dismissedOnce) {
                         showPermissionDialog = !canDrawOverlays.value || !ignoringBatteryOpt.value
                     }

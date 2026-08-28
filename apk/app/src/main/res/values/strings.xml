@@ -120,6 +120,7 @@
     <string name="import_success">Apps imported successfully</string>
     <string name="import_failed">Failed to import app list</string>
     <string name="export_success">App list exported</string>
+    <string name="export_failed">Failed to export app list</string>
     <string name="import_empty_file">The imported file is empty or invalid</string>
     <string name="import_skipped_apps">Apps not found or not installed</string>
     <string name="import_duplicate_packages">Duplicate packages skipped</string>
