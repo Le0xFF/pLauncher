@@ -116,18 +116,22 @@ if [ "$TARGET" = "--apk" ]; then
 
     # --- Legacy mipmap icons ---
     printf "Generating legacy mipmap icons...\n"
-    convert "$SOURCE" -resize 48x48   "${RES_DIR}/mipmap-mdpi/ic_launcher.png"
-    convert "$SOURCE" -resize 72x72   "${RES_DIR}/mipmap-hdpi/ic_launcher.png"
-    convert "$SOURCE" -resize 96x96   "${RES_DIR}/mipmap-xhdpi/ic_launcher.png"
-    convert "$SOURCE" -resize 144x144 "${RES_DIR}/mipmap-xxhdpi/ic_launcher.png"
-    convert "$SOURCE" -resize 192x192 "${RES_DIR}/mipmap-xxxhdpi/ic_launcher.png"
+    convert "$SOURCE" -resize 48x48   -depth 8 "${RES_DIR}/mipmap-mdpi/ic_launcher.png"
+    convert "$SOURCE" -resize 72x72   -depth 8 "${RES_DIR}/mipmap-hdpi/ic_launcher.png"
+    convert "$SOURCE" -resize 96x96   -depth 8 "${RES_DIR}/mipmap-xhdpi/ic_launcher.png"
+    convert "$SOURCE" -resize 144x144 -depth 8 "${RES_DIR}/mipmap-xxhdpi/ic_launcher.png"
+    convert "$SOURCE" -resize 192x192 -depth 8 "${RES_DIR}/mipmap-xxxhdpi/ic_launcher.png"
 
-    # --- Foreground drawable (full-res, drawable/) ---
-    # Stored in drawable/ (not drawable-nodpi/) so ic_launcher_foreground.xml's
-    # @drawable/ic_launcher_bitmap reference resolves within the same resource
-    # directory, working correctly in system UI contexts (e.g. overlay permission screen).
-    printf "Copying foreground drawable...\n"
-    cp "$SOURCE" "${RES_DIR}/drawable/ic_launcher_bitmap.png"
+    # --- Foreground drawable (432x432, drawable-nodpi/) ---
+    # Stored in drawable-nodpi/ as a 432x432 asset per the AOSP adaptive icon
+    # convention (content inside the 66dp safe zone), so system UI masks
+    # (squircle/circle) never crop the logo. The full-res source PNG stays in
+    # drawable-nodpi/_src/ only as the generation source.
+    # -flatten composites the alpha channel onto a transparent canvas before
+    # -extent, which otherwise bakes the transparency into opaque white on
+    # 16-bit sources and makes the adaptive icon background render white.
+    printf "Generating foreground drawable...\n"
+    convert "$SOURCE" -resize 432x432! -background none -flatten -gravity center -extent 432x432 -depth 8 "${RES_DIR}/drawable-nodpi/ic_launcher_bitmap.png"
 
     # --- Background drawable XML ---
     printf "Writing background drawable...\n"
@@ -226,8 +230,29 @@ EOF
     identify "${RES_DIR}/mipmap-xhdpi/ic_launcher.png"
     identify "${RES_DIR}/mipmap-xxhdpi/ic_launcher.png"
     identify "${RES_DIR}/mipmap-xxxhdpi/ic_launcher.png"
-    identify "${RES_DIR}/drawable/ic_launcher_bitmap.png"
+    identify "${RES_DIR}/drawable-nodpi/ic_launcher_bitmap.png"
     identify "${RES_DIR}/drawable-nodpi/splash_logo.png"
+
+    # --- Enforce 8-bit RGBA on generated PNGs (Krita exports are 16-bit; some
+    # Android decoders mis-handle 16-bit PNGs). -depth 8 in the convert
+    # commands above usually suffices; re-encode anything still 16-bit. ---
+    for f in \
+        "${RES_DIR}/mipmap-mdpi/ic_launcher.png" \
+        "${RES_DIR}/mipmap-hdpi/ic_launcher.png" \
+        "${RES_DIR}/mipmap-xhdpi/ic_launcher.png" \
+        "${RES_DIR}/mipmap-xxhdpi/ic_launcher.png" \
+        "${RES_DIR}/mipmap-xxxhdpi/ic_launcher.png" \
+        "${RES_DIR}/drawable-nodpi/ic_launcher_bitmap.png" \
+        "${RES_DIR}/drawable-nodpi/splash_logo.png"; do
+        if ! identify -format "%[pixel:s]" "$f" >/dev/null 2>&1; then
+            continue
+        fi
+        DEPTH=$(identify -format "%z" "$f")
+        if [ "$DEPTH" != "8" ]; then
+            printf "Re-encoding %s to 8-bit...\n" "$(basename "$f")"
+            convert "$f" -colorspace sRGB -depth 8 "$f.png8" && mv "$f.png8" "$f"
+        fi
+    done
     printf "\nXML files:\n"
     find "${RES_DIR}/drawable" -name "*.xml" -print
     find "${RES_DIR}/mipmap-anydpi-v26" -name "*.xml" -print
