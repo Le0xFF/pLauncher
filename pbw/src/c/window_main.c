@@ -6,6 +6,7 @@
 #include "window_main.h"
 #include "app_list.h"
 #include "window_main_click.h"
+#include "window_main_touch.h"
 #include "packets.h"
 #include "strings.h"
 #include "layout.h"
@@ -99,10 +100,13 @@ static void window_load(Window *window)
     layer_add_child(window_layer, bitmap_layer_get_layer(s_icon_down));
 
     window_set_click_config_provider(window, window_main_click_config_provider);
+    window_main_touch_init();
 }
 
 static void window_unload(Window *window)
 {
+    (void)window;
+    window_main_touch_deinit();
     bitmap_layer_destroy(s_icon_up);
     bitmap_layer_destroy(s_icon_down);
     bitmap_layer_destroy(s_icon_launch);
