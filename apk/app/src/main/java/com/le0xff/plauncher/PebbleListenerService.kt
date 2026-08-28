@@ -23,6 +23,7 @@ import com.le0xff.plauncher.data.AppLogBuffer
 import com.le0xff.plauncher.media.MediaResumeHandler
 import com.le0xff.plauncher.model.LaunchApp
 import com.le0xff.plauncher.ui.checkNotificationListenerAccess
+import com.le0xff.plauncher.util.ScreenWakeHelper
 import com.le0xff.plauncher.protocol.KEY_APP_INDEX
 import com.le0xff.plauncher.protocol.KEY_PACKET_TYPE
 import com.le0xff.plauncher.protocol.KEY_DISPLAY_TYPE
@@ -74,13 +75,14 @@ class PebbleListenerService : BasePebbleListenerService() {
             val result = intent?.getIntExtra(EXTRA_RESULT, 0) ?: 0
             val success = result == 1
             val packageName = intent?.getStringExtra(LaunchActivity.EXTRA_PACKAGE_NAME)
+            val wokenByUs = intent?.getBooleanExtra(LaunchActivity.EXTRA_SCREEN_WAKED_BY_US, false) ?: false
             coroutineScope.launch {
                 senderHelper?.sendLaunchConfirm(success)
                 if (success && packageName != null) {
                     mediaResumeHandler?.let { handler ->
                         dataStore?.let { store ->
                             if (store.getPlayOnLaunch()) {
-                                handler.resumeInBackground(packageName, coroutineScope)
+                                handler.resumeInBackground(packageName, coroutineScope, wokenByUs)
                             }
                         }
                     }
@@ -247,15 +249,28 @@ class PebbleListenerService : BasePebbleListenerService() {
         val apps = dataStore?.apps?.value ?: emptyList()
         if (index >= 0 && index < apps.size) {
             val app = apps[index]
+            val wokeUs = maybeWakeScreenForPlayOnLaunch()
+            AppLogBuffer.info(
+                "PebbleService",
+                if (wokeUs) "Screen woken for play-on-launch" else "Screen already on or play-on-launch disabled"
+            )
             val launchIntent = Intent(this, LaunchActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 putExtra("package_name", app.packageName)
+                putExtra(LaunchActivity.EXTRA_SCREEN_WAKED_BY_US, wokeUs)
             }
             startActivity(launchIntent)
         }
 
         updateNotification(getString(R.string.status_connected))
         return ReceiveResult.Ack
+    }
+
+    // Wakes the screen before a launch when play-on-launch is active and the screen is off.
+    private fun maybeWakeScreenForPlayOnLaunch(): Boolean {
+        if (dataStore?.getPlayOnLaunch() != true) return false
+        if (ScreenWakeHelper.isScreenOn(this)) return false
+        return ScreenWakeHelper.wakeScreen(this)
     }
 
     override fun onAppOpened(watchappUUID: UUID, watch: WatchIdentifier) {

@@ -28,9 +28,13 @@ class AppDataStore(private val context: Context) {
         private const val KEY_AUTO_CLOSE = "auto_close"
         private const val KEY_PLAY_ON_LAUNCH = "play_on_launch"
         private const val KEY_PLAY_ON_LAUNCH_TIMEOUT_MS = "play_on_launch_timeout_s"
-        const val DEFAULT_PLAY_ON_LAUNCH_TIMEOUT_S = 30
+        const val DEFAULT_PLAY_ON_LAUNCH_TIMEOUT_S = 60
         const val MIN_PLAY_ON_LAUNCH_TIMEOUT_S = 1
         const val MAX_PLAY_ON_LAUNCH_TIMEOUT_S = 60
+        private const val KEY_PLAY_ON_LAUNCH_FIRST_PHASE_S = "play_on_launch_first_phase_s"
+        const val DEFAULT_PLAY_ON_LAUNCH_FIRST_PHASE_S = 30
+        const val MIN_PLAY_ON_LAUNCH_FIRST_PHASE_S = 1
+        const val MAX_PLAY_ON_LAUNCH_FIRST_PHASE_S = 60
         private const val KEY_AUTO_LAUNCH = "auto_launch"
         private const val KEY_AUTO_LAUNCH_TARGET = "auto_launch_target"
         private const val SEP = "|"
@@ -97,6 +101,9 @@ class AppDataStore(private val context: Context) {
 
     private val _playOnLaunchTimeoutS = MutableStateFlow<Int>(loadPlayOnLaunchTimeoutS())
     val playOnLaunchTimeoutS: StateFlow<Int> = _playOnLaunchTimeoutS
+
+    private val _playOnLaunchFirstPhaseS = MutableStateFlow<Int>(loadPlayOnLaunchFirstPhaseS())
+    val playOnLaunchFirstPhaseS: StateFlow<Int> = _playOnLaunchFirstPhaseS
 
     private val _autoLaunchEnabled = MutableStateFlow<Boolean>(loadAutoLaunchEnabled())
     val autoLaunchEnabled: StateFlow<Boolean> = _autoLaunchEnabled
@@ -229,6 +236,21 @@ class AppDataStore(private val context: Context) {
     private fun loadPlayOnLaunchTimeoutS(): Int {
         return prefs.getInt(KEY_PLAY_ON_LAUNCH_TIMEOUT_MS, DEFAULT_PLAY_ON_LAUNCH_TIMEOUT_S)
             .coerceIn(MIN_PLAY_ON_LAUNCH_TIMEOUT_S, MAX_PLAY_ON_LAUNCH_TIMEOUT_S)
+    }
+
+    fun getPlayOnLaunchFirstPhaseS(): Int = _playOnLaunchFirstPhaseS.value
+
+    fun setPlayOnLaunchFirstPhaseS(value: Int) {
+        val sanitized = value.coerceIn(MIN_PLAY_ON_LAUNCH_FIRST_PHASE_S, MAX_PLAY_ON_LAUNCH_FIRST_PHASE_S)
+        _playOnLaunchFirstPhaseS.value = sanitized
+        val e = prefs.edit()
+        e.putInt(KEY_PLAY_ON_LAUNCH_FIRST_PHASE_S, sanitized)
+        e.apply()
+    }
+
+    private fun loadPlayOnLaunchFirstPhaseS(): Int {
+        return prefs.getInt(KEY_PLAY_ON_LAUNCH_FIRST_PHASE_S, DEFAULT_PLAY_ON_LAUNCH_FIRST_PHASE_S)
+            .coerceIn(MIN_PLAY_ON_LAUNCH_FIRST_PHASE_S, MAX_PLAY_ON_LAUNCH_FIRST_PHASE_S)
     }
 
     fun getAutoLaunchEnabled(): Boolean = _autoLaunchEnabled.value

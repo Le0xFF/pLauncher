@@ -31,6 +31,8 @@
     <string name="report_label_android">Android: </string>
     <string name="report_label_app_version">App Version: </string>
     <string name="wakelock_tag">pLauncher:PebbleListenerService</string>
+    <string name="screen_wake_reason">pLauncher: launch app</string>
+    <string name="screen_sleep_reason">pLauncher: play on launch done</string>
     <string name="notif_waiting">Waiting for Pebble...</string>
     <string name="notif_channel_name">Pebble Connection</string>
     <string name="status_connected">Connected</string>
@@ -43,8 +45,11 @@
     <string name="settings_play_on_launch">Play on launch</string>
     <string name="settings_play_on_launch_desc">Resume music playback when an app from the list is launched</string>
     <string name="settings_play_on_launch_timeout">Resume timeout (s)</string>
-    <string name="settings_play_on_launch_timeout_desc">How long to keep waiting for the app\'s media session after launch (1-60 seconds)</string>
-    <string name="settings_play_on_launch_timeout_placeholder">e.g. 30</string>
+    <string name="settings_play_on_launch_timeout_desc">Maximum time to keep waiting for the app\'s media session after a re-launch before giving up and sending a legacy play command. The initial wait is set above; this applies to the second attempt (1-60 seconds)</string>
+    <string name="settings_play_on_launch_timeout_placeholder">e.g. 60</string>
+    <string name="settings_play_on_launch_first_phase">Initial wait before re-launch (s)</string>
+    <string name="settings_play_on_launch_first_phase_desc">Seconds to wait for the launched app\'s media session before re-launching it. Lower values resume faster but may re-launch too early for slow apps (1-60 seconds)</string>
+    <string name="settings_play_on_launch_first_phase_placeholder">e.g. 30</string>
     <string name="settings_generate_crash_reports">Generate crash reports</string>
     <string name="settings_crash_reports_desc">Show crash details when the app crashes</string>
     <string name="settings_section_debug">Debug</string>

@@ -95,6 +95,9 @@ fun SettingsScreen(
     playOnLaunchTimeoutS: Int,
     onPlayOnLaunchTimeoutChange: (Int) -> Unit,
     onPlayOnLaunchTimeoutInvalid: () -> Unit,
+    playOnLaunchFirstPhaseS: Int,
+    onPlayOnLaunchFirstPhaseChange: (Int) -> Unit,
+    onPlayOnLaunchFirstPhaseInvalid: () -> Unit,
     autoLaunch: Boolean,
     onAutoLaunchChange: (Boolean) -> Unit,
     onExportClick: () -> Unit = {},
@@ -128,6 +131,25 @@ fun SettingsScreen(
     val timeoutInvalid = parsedTimeout == null ||
         parsedTimeout < AppDataStore.MIN_PLAY_ON_LAUNCH_TIMEOUT_S ||
         parsedTimeout > AppDataStore.MAX_PLAY_ON_LAUNCH_TIMEOUT_S
+
+    var firstPhaseInput by remember { mutableStateOf(playOnLaunchFirstPhaseS.toString()) }
+    val firstPhaseInteractionSource = remember { MutableInteractionSource() }
+    val onPlayOnLaunchFirstPhaseInvalidRef = rememberUpdatedState(onPlayOnLaunchFirstPhaseInvalid)
+    val firstPhaseHasFocus by firstPhaseInteractionSource.collectIsFocusedAsState()
+    LaunchedEffect(firstPhaseHasFocus) {
+        if (!firstPhaseHasFocus && !firstPhaseInput.isBlank()) {
+            val parsed = firstPhaseInput.toIntOrNull()
+            if (parsed == null || parsed < AppDataStore.MIN_PLAY_ON_LAUNCH_FIRST_PHASE_S ||
+                parsed > AppDataStore.MAX_PLAY_ON_LAUNCH_FIRST_PHASE_S
+            ) {
+                onPlayOnLaunchFirstPhaseInvalidRef.value()
+            }
+        }
+    }
+    val parsedFirstPhase = firstPhaseInput.toIntOrNull()
+    val firstPhaseInvalid = parsedFirstPhase == null ||
+        parsedFirstPhase < AppDataStore.MIN_PLAY_ON_LAUNCH_FIRST_PHASE_S ||
+        parsedFirstPhase > AppDataStore.MAX_PLAY_ON_LAUNCH_FIRST_PHASE_S
 
     Column(
             modifier
@@ -229,6 +251,54 @@ fun SettingsScreen(
                     Text(text = stringResource(R.string.settings_play_on_launch_desc), style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = playOnLaunch, onCheckedChange = onPlayOnLaunchChange)
+            }
+
+            HorizontalDivider()
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = stringResource(R.string.settings_play_on_launch_first_phase), style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        text = stringResource(R.string.settings_play_on_launch_first_phase_desc),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                OutlinedTextField(
+                    value = firstPhaseInput,
+                    onValueChange = { input ->
+                        if (input.length > 2) return@OutlinedTextField
+                        if (input.isNotEmpty() && input.any { !it.isDigit() }) return@OutlinedTextField
+                        firstPhaseInput = input
+                        if (input.isEmpty()) {
+                            onPlayOnLaunchFirstPhaseInvalidRef.value()
+                            return@OutlinedTextField
+                        }
+                        val parsed = input.toIntOrNull() ?: return@OutlinedTextField
+                        if (parsed in AppDataStore.MIN_PLAY_ON_LAUNCH_FIRST_PHASE_S..AppDataStore.MAX_PLAY_ON_LAUNCH_FIRST_PHASE_S) {
+                            onPlayOnLaunchFirstPhaseChange(parsed)
+                        } else {
+                            onPlayOnLaunchFirstPhaseInvalidRef.value()
+                        }
+                    },
+                    isError = firstPhaseInvalid,
+                    enabled = playOnLaunch,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    placeholder = { Text(stringResource(R.string.settings_play_on_launch_first_phase_placeholder)) },
+                    interactionSource = firstPhaseInteractionSource,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                        disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.width(84.dp)
+                )
             }
 
             HorizontalDivider()
