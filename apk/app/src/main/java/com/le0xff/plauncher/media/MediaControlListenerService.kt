@@ -15,10 +15,10 @@ import android.content.IntentFilter
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
-import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.view.KeyEvent
 import com.le0xff.plauncher.data.AppLogBuffer
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -39,10 +39,26 @@ class MediaControlListenerService : NotificationListenerService() {
     // User-configurable first-phase window (ms), set by requestResume() on the main thread before
     // sendBroadcast; consumed by commandReceiver (same process). Null means "use default scaling".
     private var pendingFirstPhaseMs: Long? = null
-    // Set by requestResume() on the main thread before sendBroadcast; consumed by commandReceiver (same process).
     private var pendingOnFinish: (() -> Unit)? = null
+    // Like pendingOnFinish but handed to the flow so onUnbind() can release the screen if the flow
+    // is aborted mid-run (service unbound before the flow reached its terminal callback).
+    private var pendingOnAbort: (() -> Unit)? = null
 
-    private val activeSessionsListener = MediaSessionManager.OnActiveSessionsChangedListener { }
+    // Reused MediaController instances keyed by session token. Avoids re-creating a controller
+    // (and its binder) on every polling tick. Invalidated in [onUnbind] and when a fetched session
+    // list no longer contains the token (evicted by [fetchActiveSessions]).
+    private val controllerByToken = HashMap<String, MediaController>()
+    // Set while any resume flow is running so the session-changed listener can wake the poll loop.
+    @Volatile
+    private var flowActive = false
+    // One-shot, main-thread-safe signal consumed by the poll loops: the session listener sets it
+    // (CAS) and a waiting tick takes it (getAndSet). A fresh token is minted per take so a wake-up
+    // delivered while a loop is in its IPC call is not lost, and no coroutine is ever blocked.
+    private val sessionSignal = AtomicLong(0L)
+
+    private val activeSessionsListener = MediaSessionManager.OnActiveSessionsChangedListener { sessions ->
+        handleSessionsChanged(sessions)
+    }
 
     private val commandReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -55,7 +71,8 @@ class MediaControlListenerService : NotificationListenerService() {
                 pkg,
                 timeoutMs,
                 pendingFirstPhaseMs.also { pendingFirstPhaseMs = null },
-                pendingOnFinish.also { pendingOnFinish = null }
+                pendingOnFinish.also { pendingOnFinish = null },
+                pendingOnAbort.also { pendingOnAbort = null }
             )
         }
     }
@@ -78,6 +95,9 @@ class MediaControlListenerService : NotificationListenerService() {
     }
 
     override fun onListenerDisconnected() {
+        // Intentionally no automatic rebind here: reacting to a disconnect could loop. The listener is
+        // rebound on the next discrete need (watch connection, boot, or feature toggle) instead.
+        AppLogBuffer.info(TAG, "listener disconnected — will be rebound on next need")
         runCatching {
             manager.removeOnActiveSessionsChangedListener(activeSessionsListener)
         }.onFailure { e ->
@@ -93,6 +113,15 @@ class MediaControlListenerService : NotificationListenerService() {
             manager.removeOnActiveSessionsChangedListener(activeSessionsListener)
         }
         runCatching { unregisterReceiver(commandReceiver) }
+        controllerByToken.clear()
+        flowActive = false
+        // The scope is about to be cancelled: any in-flight flow will never reach its terminal
+        // onFlowFinished, so release the screen wake lock here on its behalf (no-op when we did not
+        // wake the screen). After this, callers must treat the process as having no flow in flight.
+        runCatching { pendingOnAbort?.invoke() }
+            .onFailure { e -> AppLogBuffer.warn(TAG, "onAbortedFlow failed: ${e.message}") }
+        pendingOnAbort = null
+        flowInProgress = false
         scope.cancel()
         return super.onUnbind(intent)
     }
@@ -106,11 +135,38 @@ class MediaControlListenerService : NotificationListenerService() {
         startResume(pending.first, pending.second)
     }
 
+    // Runs on the main thread whenever the active session set changes. While a flow is running it
+    // arms the wake signal so the poll loop reacts to a newly appeared (or removed) session without
+    // waiting for the next timer tick. Cached controllers are evicted lazily by [fetchActiveSessions].
+    // The signal re-arms only when nothing was pending, so a burst of change events (e.g. the target
+    // app flapping its session during cold start) cannot keep the poll loops in a no-delay hot loop.
+    private fun handleSessionsChanged(sessions: List<MediaController>?) {
+        if (!flowActive || sessions.isNullOrEmpty()) return
+        AppLogBuffer.debug(TAG, "Active sessions changed, waking poll loop")
+        sessionSignal.compareAndSet(0L, System.nanoTime())
+    }
+
+    /**
+     * Blocks until [timeoutMs] elapses or the session listener fires. Returns true when woken by
+     * an event. The signal is consumed (getAndSet 0) before yielding, so a wake-up arriving during
+     * the IPC call is not lost; the loop re-waits with whatever time remains in the tick budget.
+     */
+    private suspend fun awaitSessionOrTimeout(timeoutMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (true) {
+            if (sessionSignal.getAndSet(0L) != 0L) return true
+            val remaining = deadline - System.currentTimeMillis()
+            if (remaining <= 0L) return false
+            delay(remaining.coerceAtMost(POLL_INTERVAL_MS))
+        }
+    }
+
     private fun startResume(
         packageName: String,
         timeoutMs: Int,
         firstPhaseMs: Long? = null,
-        onFlowFinished: (() -> Unit)? = null
+        onFlowFinished: (() -> Unit)? = null,
+        onFlowAborted: (() -> Unit)? = null
     ) {
         val effectiveTimeout = timeoutMs.toLong().coerceIn(MIN_TIMEOUT_MS, MAX_TIMEOUT_MS)
         // First phase gives up (and re-launches) once a session has been present but unplayable for
@@ -125,11 +181,18 @@ class MediaControlListenerService : NotificationListenerService() {
             runCatching { onFlowFinished?.invoke() }
                 .onFailure { e -> AppLogBuffer.warn(TAG, "onFlowFinished failed: ${e.message}") }
         }
+        flowInProgress = true
+        if (onFlowAborted != null) {
+            pendingOnAbort = onFlowAborted
+        }
         scope.launch {
             pendingResume = null
-            if (firstPhase(packageName, stuckGiveUpMs)) {
+            flowActive = true
+            val succeeded = firstPhase(packageName, stuckGiveUpMs)
+            if (succeeded) {
                 AppLogBuffer.info(TAG, "Resumed playback for $packageName")
                 finishOnce()
+                flowInProgress = false
                 return@launch
             }
             AppLogBuffer.info(TAG, "No playable session in ${stuckGiveUpMs}ms, re-launching $packageName")
@@ -141,15 +204,17 @@ class MediaControlListenerService : NotificationListenerService() {
                 AppLogBuffer.warn(TAG, "All resume attempts failed for $packageName, fallback broadcast sent")
             }
             finishOnce()
+            flowActive = false
+            flowInProgress = false
         }
     }
-
-    /**
-     * First phase: poll until the target's media session becomes genuinely playable. While the
-     * session is absent we simply wait (it has not booted yet). Once it exists but keeps rejecting
-     * play() (PAUSED with no track queued during cold start) for [stuckGiveUpMs], we stop and let
-     * the caller re-launch instead of burning the whole window on no-op attempts. Returns true only
-     * if playback was confirmed.
+/**
+     * First phase: wait until the target's media session becomes genuinely playable. While the
+     * session is absent we simply wait (it has not booted yet) and also react immediately to a
+     * session-changed event instead of only on the next timer tick. Once it exists but keeps
+     * rejecting play() (PAUSED with no track queued during cold start) for [stuckGiveUpMs], we stop
+     * and let the caller re-launch instead of burning the whole window on no-op attempts. Returns
+     * true only if playback was confirmed.
      */
     private suspend fun firstPhase(packageName: String, stuckGiveUpMs: Long): Boolean {
         val self = this
@@ -158,15 +223,17 @@ class MediaControlListenerService : NotificationListenerService() {
         var presentSinceMs: Long? = null
         withTimeoutOrNull(stuckGiveUpMs) {
             while (true) {
-                delay(POLL_INTERVAL_MS)
+                awaitSessionOrTimeout(POLL_INTERVAL_MS)
                 if (instance !== self) break
-                when (firstPhaseTick(packageName, presentSinceMs, stuckGiveUpMs)) {
+                val sessions = fetchActiveSessions()
+                when (firstPhaseTick(sessions, packageName, presentSinceMs, stuckGiveUpMs)) {
                     FirstPhaseOutcome.PLAYING -> {
                         played = true
                         break
                     }
+
                     FirstPhaseOutcome.STUCK_GIVEUP -> break
-                    FirstPhaseOutcome.CONTINUE -> presentSinceMs = currentPresentSince(packageName, presentSinceMs)
+                    FirstPhaseOutcome.CONTINUE -> presentSinceMs = currentPresentSince(sessions, packageName, presentSinceMs)
                 }
             }
         }
@@ -178,8 +245,12 @@ class MediaControlListenerService : NotificationListenerService() {
     private enum class FirstPhaseOutcome { PLAYING, STUCK_GIVEUP, CONTINUE }
 
     // Advances the "session present since" marker, or returns null when no session is visible yet.
-    private suspend fun currentPresentSince(packageName: String, previous: Long?): Long? {
-        return if (findController(packageName) == null) null else previous ?: System.currentTimeMillis()
+    private fun currentPresentSince(
+        sessions: List<MediaController>,
+        packageName: String,
+        previous: Long?
+    ): Long? {
+        return if (findInList(sessions, packageName) == null) null else previous ?: System.currentTimeMillis()
     }
 
     /**
@@ -189,12 +260,14 @@ class MediaControlListenerService : NotificationListenerService() {
      * present but unplayable for [stuckGiveUpMs] or more, otherwise CONTINUE.
      */
     private suspend fun firstPhaseTick(
+        sessions: List<MediaController>,
         packageName: String,
         presentSinceMs: Long?,
         stuckGiveUpMs: Long
     ): FirstPhaseOutcome {
-        if (findController(packageName) == null) return FirstPhaseOutcome.CONTINUE
-        if (tryPlay(packageName) && probeGenuinelyPlaying(packageName)) return FirstPhaseOutcome.PLAYING
+        if (findInList(sessions, packageName) == null) return FirstPhaseOutcome.CONTINUE
+        val controller = tryPlay(sessions, packageName) ?: return FirstPhaseOutcome.CONTINUE
+        if (isGenuinelyPlaying(controller.playbackState)) return FirstPhaseOutcome.PLAYING
         val since = presentSinceMs ?: return FirstPhaseOutcome.CONTINUE
         return if (System.currentTimeMillis() - since >= stuckGiveUpMs) {
             FirstPhaseOutcome.STUCK_GIVEUP
@@ -203,40 +276,33 @@ class MediaControlListenerService : NotificationListenerService() {
         }
     }
 
-    // Single non-blocking probe: is the session genuinely playing right now? Unlike
-    // [verifyPlaying] this does not wait, so it cannot consume the phase budget.
-    private suspend fun probeGenuinelyPlaying(packageName: String): Boolean {
-        return isGenuinelyPlaying(findController(packageName)?.playbackState)
-    }
-
     private suspend fun pollAndPlay(packageName: String, timeoutMs: Long): Boolean {
         val self = this
         if (instance !== self) return false
         var played = false
         withTimeoutOrNull(timeoutMs) {
             while (true) {
-                delay(POLL_INTERVAL_MS)
+                awaitSessionOrTimeout(POLL_INTERVAL_MS)
                 if (instance !== self) break
-                if (tryPlay(packageName)) {
-                    played = true
-                    if (!verifyPlaying(packageName, VERIFY_PLAYING_MS)) {
-                        AppLogBuffer.warn(TAG, "play() did not take effect for $packageName, retrying")
-                        played = false
-                    } else {
-                        break
-                    }
+                val sessions = fetchActiveSessions()
+                val controller = tryPlay(sessions, packageName) ?: continue
+                played = true
+                if (!verifyPlaying(controller, VERIFY_PLAYING_MS)) {
+                    AppLogBuffer.warn(TAG, "play() did not take effect for $packageName, retrying")
+                    played = false
+                } else {
+                    break
                 }
             }
         }
         return played
     }
 
-    private suspend fun verifyPlaying(packageName: String, timeoutMs: Long): Boolean {
+    private suspend fun verifyPlaying(controller: MediaController, timeoutMs: Long): Boolean {
         var result = false
         withTimeoutOrNull(timeoutMs) {
             while (true) {
-                delay(POLL_INTERVAL_MS)
-                val controller = findController(packageName) ?: continue
+                awaitSessionOrTimeout(POLL_INTERVAL_MS)
                 if (isGenuinelyPlaying(controller.playbackState)) {
                     result = true
                     break
@@ -260,9 +326,36 @@ class MediaControlListenerService : NotificationListenerService() {
         }
     }
 
-    private suspend fun findController(packageName: String): MediaController? {
-        val controllers = runCatching { manager.getActiveSessions(componentSelf) }.getOrNull() ?: return null
-        return controllers.firstOrNull { it.packageName == packageName }
+    // Single IPC call returning every visible session. The token set is also used to evict cached
+    // controllers whose session has disappeared, so each tick performs exactly one binder round-trip.
+    private fun fetchActiveSessions(): List<MediaController> {
+        val sessions = runCatching { manager.getActiveSessions(componentSelf) }.getOrNull() ?: return emptyList()
+        val visibleTokens = sessions.mapTo(mutableSetOf()) { it.sessionToken.toString() }
+        controllerByToken.keys.retainAll(visibleTokens)
+        return sessions
+    }
+
+    // Picks the target's best-matching session (playable state preferred), same matching rules as
+    // before but operating on an already-fetched list instead of another IPC call.
+    private fun findInList(sessions: List<MediaController>, packageName: String): MediaController? {
+        val active = sessions.firstOrNull {
+            it.packageName == packageName &&
+                it.playbackState?.state != PlaybackState.STATE_NONE &&
+                it.playbackState?.state != PlaybackState.STATE_STOPPED
+        }
+        return active ?: sessions.firstOrNull { it.packageName == packageName }
+    }
+
+    // Returns a [MediaController] for the given session, reusing a cached instance while its
+    // token is still valid. A new controller is created and cached only when the token changes.
+    private fun controllerFor(session: MediaController): MediaController {
+        val token = session.sessionToken.toString()
+        controllerByToken[token]?.let { return it }
+        val created = runCatching {
+            MediaController(applicationContext, session.sessionToken)
+        }.getOrNull() ?: return session
+        controllerByToken[token] = created
+        return created
     }
 
     private fun relaunchApp(packageName: String) {
@@ -276,41 +369,28 @@ class MediaControlListenerService : NotificationListenerService() {
         }
     }
 
-    private suspend fun tryPlay(packageName: String): Boolean {
-        val controllers = runCatching { manager.getActiveSessions(componentSelf) }.getOrElse { e ->
-            AppLogBuffer.warn(TAG, "getActiveSessions failed: ${e.message}")
-            return false
-        }
-        val sessionPkgs = controllers.joinToString(", ") { it.packageName ?: "?" }
+    // Sends a play command via the target's (cached) MediaController. Returns the controller used so
+    // callers can probe its playback state without an extra IPC call, or null when no session matched.
+    private suspend fun tryPlay(sessions: List<MediaController>, packageName: String): MediaController? {
+        val match = findInList(sessions, packageName) ?: return null
+        val sessionPkgs = sessions.joinToString(", ") { it.packageName ?: "?" }
         AppLogBuffer.debug(TAG, "Poll: $packageName | visible sessions: [$sessionPkgs]")
-        val match = findMatch(controllers, packageName) ?: return false
-        val controller = runCatching {
-            MediaController(applicationContext, match.sessionToken)
-        }.getOrNull() ?: return false
+        val controller = controllerFor(match)
+        val playbackState = match.playbackState
+        val state = playbackState?.state
+        val hasPlayAction = playbackState?.actions?.and(PlaybackState.ACTION_PLAY) != 0L
         return try {
-            val playbackState = match.playbackState
-            val state = playbackState?.state
-            val hasPlayAction = playbackState?.actions?.and(PlaybackState.ACTION_PLAY) != 0L
             if (hasPlayAction || state == PlaybackState.STATE_NONE || state == PlaybackState.STATE_STOPPED) {
                 controller.transportControls.play()
             } else {
                 controller.dispatchMediaButtonEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
                 controller.dispatchMediaButtonEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
             }
-            true
+            controller
         } catch (e: Exception) {
             AppLogBuffer.warn(TAG, "Failed to send play to $packageName: ${e.message}")
-            false
+            null
         }
-    }
-
-    private fun findMatch(controllers: List<MediaController>, packageName: String): MediaController? {
-        val active = controllers.firstOrNull {
-            it.packageName == packageName &&
-                it.playbackState?.state != PlaybackState.STATE_NONE &&
-                it.playbackState?.state != PlaybackState.STATE_STOPPED
-        }
-        return active ?: controllers.firstOrNull { it.packageName == packageName }
     }
 
     companion object {
@@ -332,6 +412,51 @@ class MediaControlListenerService : NotificationListenerService() {
         var instance: MediaControlListenerService? = null
             private set
 
+        // Process-level "a resume flow was started and has not yet terminated" flag. Lives in the
+        // companion (not the service instance) so it survives onUnbind() nulling `instance`, giving
+        // callers (e.g. PebbleListenerService.onAppClosed) a stable view even after the service is
+        // unbound mid-flow. Set by startResume(), cleared when the flow reaches its terminal
+        // callback or when onUnbind() aborts it.
+        @Volatile
+        private var flowInProgress = false
+
+        // True while a resume flow is running in this process (or was started and not yet terminated).
+        // Callers must not stop/unbind the listener while this is true, or an in-flight flow would
+        // be aborted mid-run and the screen wake lock leaked.
+        val isFlowActive: Boolean
+            get() = flowInProgress || (instance?.flowActive ?: false)
+
+        /**
+         * Best-effort: asks the system to bind this notification listener again if it was unbound
+         * (e.g. after a process restart or on slow OEMs that drop the binding at boot). Safe to call
+         * before [onListenerConnected] or after [onListenerDisconnected]; no-op when already bound.
+         */
+        fun requestRebindIfUnbound(context: Context) {
+            if (instance != null) return
+            runCatching {
+                requestRebind(ComponentName(context.packageName, MediaControlListenerService::class.java.name))
+                AppLogBuffer.info(TAG, "Requested rebind of notification listener")
+            }.onFailure { e ->
+                AppLogBuffer.warn(TAG, "Failed to rebind notification listener: ${e.message}")
+            }
+        }
+
+        // Best-effort: tells the system the listener no longer wants notifications so the process can
+        // idle while the feature is off. Some systems/OEMs keep a granted listener bound anyway, so the
+        // result is only logged, never required.
+        fun stopListenerBestEffort() {
+            val service = instance ?: run {
+                AppLogBuffer.warn(TAG, "Cannot stop notification listener: not bound")
+                return
+            }
+            runCatching {
+                service.stopSelf()
+                AppLogBuffer.info(TAG, "Notification listener stop requested (best effort)")
+            }.onFailure { e ->
+                AppLogBuffer.warn(TAG, "Failed to stop notification listener: ${e.message}")
+            }
+        }
+
         fun requestResume(
             context: Context,
             packageName: String,
@@ -345,19 +470,21 @@ class MediaControlListenerService : NotificationListenerService() {
                 "requestResume: pkg=$packageName timeout=${timeoutMs}ms firstPhase=$firstPhaseLabel instance=${instance != null}"
             )
             if (instance == null) {
-                AppLogBuffer.warn(TAG, "Notification listener not bound, opening notification access settings")
-                runCatching {
-                    context.startActivity(
-                        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }
+                // NLS not bound: do NOT open the settings screen here (it would turn the display
+                // on before the fallback runs). The caller sends the legacy broadcast first and
+                // then opens the notification-access settings informally; the returned false only
+                // signals that no session-based resume was dispatched.
+                AppLogBuffer.warn(TAG, "Notification listener not bound, deferring to caller fallback")
                 return false
             }
             val clampedTimeout = timeoutMs.coerceIn(MIN_TIMEOUT_MS, MAX_TIMEOUT_MS).toInt()
             // Same-process handoff: the receiver runs in this same service process and reads
-            // pendingFirstPhaseMs / pendingOnFinish on the main thread; no lock needed.
+            // pendingFirstPhaseMs / pendingOnFinish / pendingOnAbort on the main thread; no lock needed.
             instance?.pendingFirstPhaseMs = firstPhaseMs
             instance?.pendingOnFinish = onFlowFinished
+            // The abort callback mirrors onFlowFinished so that if the service is unbound mid-flow
+            // (watch disconnect, system reclaim), onUnbind() still releases the screen wake lock.
+            instance?.pendingOnAbort = onFlowFinished
             context.sendBroadcast(
                 Intent(ACTION_REQUEST_RESUME)
                     .setPackage(context.packageName)

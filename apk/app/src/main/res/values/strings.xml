@@ -50,6 +50,7 @@
     <string name="settings_play_on_launch_first_phase">Initial wait before re-launch (s)</string>
     <string name="settings_play_on_launch_first_phase_desc">Seconds to wait for the launched app\'s media session before re-launching it. Lower values resume faster but may re-launch too early for slow apps (1-60 seconds)</string>
     <string name="settings_play_on_launch_first_phase_placeholder">e.g. 30</string>
+    <string name="play_on_launch_requires_notification_access">Grant notification access first (Settings → Permissions) to use Play on launch</string>
     <string name="settings_generate_crash_reports">Generate crash reports</string>
     <string name="settings_crash_reports_desc">Show crash details when the app crashes</string>
     <string name="settings_section_debug">Debug</string>

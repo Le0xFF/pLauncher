@@ -20,6 +20,7 @@ import androidx.core.app.NotificationCompat
 import com.le0xff.plauncher.R
 import com.le0xff.plauncher.data.AppDataStore
 import com.le0xff.plauncher.data.AppLogBuffer
+import com.le0xff.plauncher.media.MediaControlListenerService
 import com.le0xff.plauncher.media.MediaResumeHandler
 import com.le0xff.plauncher.model.LaunchApp
 import com.le0xff.plauncher.ui.checkNotificationListenerAccess
@@ -208,6 +209,7 @@ class PebbleListenerService : BasePebbleListenerService() {
     // Watch connection handler: store display type, send welcome, prefs, refresh icons, send full app list.
     private suspend fun handleWatchWelcome(data: PebbleDictionary, watch: WatchIdentifier): ReceiveResult {
         AppLogBuffer.info("PebbleService", "Watch connected: $watch")
+        selfHealListenerIfFeatureEnabled()
         senderHelper?.let { helper ->
             val displayType = parseDisplayType(data)
             helper.watchDisplayType = displayType
@@ -273,12 +275,30 @@ class PebbleListenerService : BasePebbleListenerService() {
         return ScreenWakeHelper.wakeScreen(this)
     }
 
+    // Self-heal: if the feature is on and granted but the listener was never bound (e.g. after a
+    // process restart), ask the system to bind it again so the next launch can resume playback.
+    private fun selfHealListenerIfFeatureEnabled() {
+        val store = dataStore ?: return
+        if (store.getPlayOnLaunch() != true) return
+        if (!checkNotificationListenerAccess(this)) return
+        if (MediaControlListenerService.instance == null) {
+            AppLogBuffer.info("PebbleService", "Notification listener not bound, requesting rebind")
+            MediaControlListenerService.requestRebindIfUnbound(this)
+        }
+    }
+
     override fun onAppOpened(watchappUUID: UUID, watch: WatchIdentifier) {
         // No action: watch sends WatchWelcome; companion responds in handleWatchWelcome()
     }
 
     override fun onAppClosed(watchappUUID: UUID, watch: WatchIdentifier) {
         AppLogBuffer.info("PebbleService", "Watch disconnected")
+        // Best-effort: with the feature off and nothing in flight, let the notification listener idle
+        // so it stops consuming every system notification. Some systems keep it bound anyway.
+        val store = dataStore
+        if (store?.getPlayOnLaunch() == false && !MediaControlListenerService.isFlowActive) {
+            MediaControlListenerService.stopListenerBestEffort()
+        }
         updateNotification(getString(R.string.notif_disconnected))
     }
 

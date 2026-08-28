@@ -7,6 +7,8 @@ package com.le0xff.plauncher.media
  */
 
 import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import com.le0xff.plauncher.data.AppDataStore
 import com.le0xff.plauncher.data.AppLogBuffer
 import com.le0xff.plauncher.util.ScreenWakeHelper
@@ -68,9 +70,25 @@ class MediaResumeHandler(
             onFlowFinished
         )
         if (!dispatched) {
-            AppLogBuffer.warn(TAG, "Notification access unavailable, sending legacy broadcast only")
+            // NLS not bound: send the legacy broadcast first (never opens a screen), release our
+            // wake lock, and only then open the notification access settings informally so the
+            // user knows the permission is missing. The activity start may be blocked by the
+            // system for background services; in that case the flow simply ends with the log.
+            AppLogBuffer.warn(TAG, "Notification access unavailable, sending legacy broadcast")
             LegacyBroadcastFallback.sendPlay(context, packageName)
             onFlowFinished?.invoke()
+            val openedSettings = runCatching {
+                context.startActivity(
+                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+                true
+            }.getOrElse { e ->
+                AppLogBuffer.warn(TAG, "Failed to open notification access settings: ${e.message}")
+                false
+            }
+            if (openedSettings) {
+                AppLogBuffer.info(TAG, "Notification access settings opened after fallback broadcast")
+            }
         }
     }
 }
