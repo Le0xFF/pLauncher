@@ -4,13 +4,13 @@
 
 ### Overview
 
-Added the ability to import and export the app list in YAML format from the companion app's Settings screen. The feature includes a new "Import/Export" accordion section between "Watchapp settings" and "Permissions", with Export sharing the YAML file via Android's share intent (using `FileProvider`), and Import opening a file picker to select a YAML file. The import process includes a confirmation dialog before overwriting the current list, comprehensive validation (duplicate packages, duplicate positions, out-of-range positions, max 20 apps, multiple auto-launch targets), position normalization, and a structured warnings dialog that displays all issues after import. The auto-launch target from the YAML is correctly preserved and synchronized to both the ViewModel, DataStore, and Pebble watch.
+Added the ability to import and export the app list in YAML format from the companion app's Settings screen. The feature includes a new "Import/Export" accordion section between "Watchapp settings" and "Permissions", with Export saving the YAML file through the Storage Access Framework (`ACTION_CREATE_DOCUMENT` system picker), and Import opening a file picker to select a YAML file. The import process includes a confirmation dialog before overwriting the current list, comprehensive validation (duplicate packages, duplicate positions, out-of-range positions, max 20 apps, multiple auto-launch targets), position normalization, and a structured warnings dialog that displays all issues after import. The auto-launch target from the YAML is correctly preserved and synchronized to both the ViewModel, DataStore, and Pebble watch.
 
 ### Analysis
 
 - **Previous state**: The companion app managed the app list locally (SharedPreferences) but had no mechanism to back up, restore, or transfer the list between devices. Users could only add/remove apps one at a time.
 - **YAML format**: Each app entry contains four fields: `package` (Android package name), `custom_name` (renamed display name, empty if unchanged), `position` (0-based index), `auto_launch` (boolean, true for auto-launch target). No `name` field is stored — the original name is recovered from `PackageManager` during import if `custom_name` is empty.
-- **Export**: Generates YAML manually (not via SnakeYAML, which produces verbose output) with 2-space indentation. The YAML is written to a temporary file in the app's cache directory and shared via `FileProvider` with `EXTRA_STREAM`, ensuring file managers like Amaze can save the file correctly.
+- **Export**: Generates YAML manually (not via SnakeYAML, which produces verbose output) with 2-space indentation. After the user picks a destination in the system document picker (`ACTION_CREATE_DOCUMENT`, suggested name `plauncher_apps.yaml`), the YAML is written directly to the returned content URI via `ContentResolver.openOutputStream()`. This replaced the original `FileProvider` + `ACTION_SEND` share intent: recipient apps behaved inconsistently (e.g. Amaze saved `text/plain` shares under a timestamp-based filename, Google Drive renamed the file after `EXTRA_SUBJECT`), while SAF gives a stable user-chosen name and complete content on any device or storage provider.
 - **Import**: Parses YAML using SnakeYAML (`org.yaml:snakeyaml:2.3`), validates entries with 6 distinct checks, normalizes positions, resolves display names from `PackageManager`, and returns structured data (`ImportResult`) that MainActivity formats into localized warning messages.
 - **Confirmation**: Before applying an import, a dialog warns the user that the current list will be replaced, showing the number of apps from the file. The YAML is parsed upfront but not applied until confirmed.
 - **Warnings dialog**: After a confirmed import, if any validation warnings exist, a single AlertDialog displays all warnings with a ⚠️ emoji in the title ("Import warnings"), each warning reason separated by `HorizontalDivider`, labels in bold, and associated package names listed one per line in monospace.
@@ -26,11 +26,11 @@ Added the ability to import and export the app list in YAML format from the comp
 | `app/build.gradle.kts` | Added `implementation(libs.snakeyaml)` in dependencies. |
 | `app/src/main/AndroidManifest.xml` | Added `FileProvider` with authority `com.le0xff.plauncher.fileprovider`, `android:exported="false"`, `android:grantUriPermissions="true"`, and `meta-data` referencing `@xml/file_paths`. |
 | `app/src/main/res/xml/file_paths.xml` (new) | Defined `<cache-path name="exports" path="exports/" />` for FileProvider to expose temporary YAML files. |
-| `app/src/main/res/values/strings.xml` | Added 18 new strings: `settings_section_import_export`, `settings_import_export_desc`, `settings_yaml_example`, `button_import`, `button_export`, `import_success`, `import_failed`, `export_success`, `import_empty_file`, `import_skipped_apps`, `import_duplicate_packages`, `import_duplicate_positions`, `import_position_out_of_range`, `import_multiple_auto_launch`, `import_max_apps_exceeded`, `import_confirm_title`, `import_confirm_text`, `import_button_replace`, `import_warnings_title`. |
+| `app/src/main/res/values/strings.xml` | Added 19 new strings: `settings_section_import_export`, `settings_import_export_desc`, `settings_yaml_example`, `button_import`, `button_export`, `import_success`, `import_failed`, `export_success`, `export_failed`, `import_empty_file`, `import_skipped_apps`, `import_duplicate_packages`, `import_duplicate_positions`, `import_position_out_of_range`, `import_multiple_auto_launch`, `import_max_apps_exceeded`, `import_confirm_title`, `import_confirm_text`, `import_button_replace`, `import_warnings_title`. |
 | `data/YamlExportImport.kt` (new) | Created utility object with `exportAppsToYaml()` (manual YAML generation) and `importAppsFromYaml()` (SnakeYAML parsing with full validation). Created `ImportResult` data class with 9 fields for structured results. |
 | `data/AppDataStore.kt` | Added `import android.content.pm.PackageManager`. Added `exportAppsToYaml()` and `importAppsFromYaml()` methods delegating to `YamlExportImport`. |
 | `ui/SettingsScreen.kt` | Added `onExportClick` and `onImportClick` parameters (default `{}`). Added `importExportExpanded` state. Added "Import/Export" accordion card between "Watchapp settings" and "Permissions" with description, YAML example in monospace, and two side-by-side buttons. |
-| `MainActivity.kt` | Added imports for `PackageManager`, `Uri`, `FileProvider`, `File`, `YamlExportImport`, `rememberLauncherForActivityResult`, `ActivityResultContracts`. Added `importPendingResult` and `importWarningsResult` state variables. Added `importLauncher` using `StartActivityForResult()` with `ACTION_GET_CONTENT` (`*/*` MIME). Added `applyImportResult()` function that applies import to ViewModel, DataStore, and watch. Added `buildOriginalNames()` helper. Added `onExportClick` (writes YAML to temp file, shares via FileProvider). Added `onImportClick` (opens file picker). Added confirmation dialog and warnings dialog. |
+| `MainActivity.kt` | Added imports for `PackageManager`, `Uri`, `IOException`, `YamlExportImport`, `rememberLauncherForActivityResult`, `ActivityResultContracts`. Added `importPendingResult` and `importWarningsResult` state variables. Added `importLauncher` using `StartActivityForResult()` with `ACTION_GET_CONTENT` (`*/*` MIME). Added `applyImportResult()` function that applies import to ViewModel, DataStore, and watch. Added `buildOriginalNames()` helper. Added `exportYamlLauncher` using `CreateDocument("text/yaml")` (SAF) — generates the YAML at result time and writes it to the picked URI; `onExportClick` launches it with suggested name `plauncher_apps.yaml` and a `yamlExportPending` guard against double-picker crashes (reset on resume). Added `onImportClick` (opens file picker). Added confirmation dialog and warnings dialog. |
 
 #### Deprecation Fixes (pre-existing)
 
@@ -53,27 +53,31 @@ The export generates YAML manually with 2-space indentation. Each entry has four
 ```
 The `custom_name` is only populated if the app's `displayName` differs from the original name (queried from `PackageManager`). This keeps the YAML minimal — unchanged apps have empty `custom_name`.
 
-**Export with FileProvider** (`MainActivity.kt`):
+**Export with Storage Access Framework** (`MainActivity.kt`):
 ```kotlin
-val onExportClick: () -> Unit = {
-    val originalNames = buildOriginalNames(apps)
-    val yamlContent = dataStore.exportAppsToYaml(originalNames, autoLaunchTarget)
-    val exportsDir = File(context.cacheDir, "exports")
-    if (!exportsDir.exists()) exportsDir.mkdirs()
-    val file = File(exportsDir, "plauncher_apps.yaml")
-    file.writeText(yamlContent)
-    val uri = FileProvider.getUriForFile(
-        context, "com.le0xff.plauncher.fileprovider", file
-    )
-    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/yaml"
-        putExtra(Intent.EXTRA_STREAM, uri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+val exportYamlLauncher = rememberLauncherForActivityResult(
+    ActivityResultContracts.CreateDocument("text/yaml")
+) { uri ->
+    if (uri == null) return@rememberLauncherForActivityResult
+    try {
+        val originalNames = buildOriginalNames(apps)
+        val yamlContent = dataStore.exportAppsToYaml(originalNames, autoLaunchTarget)
+        contentResolver.openOutputStream(uri)?.use { it.write(yamlContent.toByteArray()) }
+            ?: throw IOException("No output stream for $uri")
+        Toast.makeText(context, R.string.export_success, Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+        Toast.makeText(context, R.string.export_failed, Toast.LENGTH_SHORT).show()
     }
-    startActivity(Intent.createChooser(shareIntent, getString(R.string.button_export)))
+}
+
+val onExportClick: () -> Unit = onExport@{
+    if (!yamlExportPending) {
+        yamlExportPending = true
+        exportYamlLauncher.launch("plauncher_apps.yaml")
+    }
 }
 ```
-The file is written to `cacheDir/exports/plauncher_apps.yaml` and shared via `FileProvider` with `EXTRA_STREAM`. This provides a valid URI that file managers (Amaze, etc.) can save correctly, unlike the previous `EXTRA_TEXT` approach.
+The user picks the destination in the system document picker (internal storage, SD card, Google Drive, Dropbox, …) with `plauncher_apps.yaml` as the suggested name; the app then writes the YAML directly to the returned URI. The YAML is generated only after a destination is chosen, so nothing is written if the user cancels. The `yamlExportPending` flag (reset in `LaunchedEffect(resumeCounter)` when the activity resumes) prevents launching a second picker while one is open, which would crash with "Can not launch activity while another launch is in progress". This SAF approach replaced the original `FileProvider` + `ACTION_SEND` flow because recipient apps handled the share intent inconsistently: Amaze ignored `EXTRA_STREAM` for `text/plain` shares and saved under a timestamp-derived filename, and Google Drive renames uploaded files after `EXTRA_SUBJECT`. With SAF the name is always the one the user confirms and the content is always complete, on any device or provider.
 
 **Import with file picker** (`MainActivity.kt`):
 ```kotlin
@@ -250,7 +254,7 @@ Import warnings dialog:
 
 #### Known Issues Resolved
 
-**FileProvider for export**: The initial implementation used `EXTRA_TEXT` with `ACTION_SEND`, which worked for messaging apps but failed with file managers (Amaze) that expect `EXTRA_STREAM` with a file URI. Fixed by writing YAML to a temporary file in `cacheDir/exports/` and sharing via `FileProvider`.
+**File sharing for export**: The initial implementation used `EXTRA_TEXT` with `ACTION_SEND`, which worked for messaging apps but failed with file managers (Amaze) that expect `EXTRA_STREAM` with a file URI. An intermediate fix wrote the YAML to a temporary file in `cacheDir/exports/` and shared it via `FileProvider`; that still proved recipient-dependent (Amaze saved `text/plain` shares under a timestamp-derived filename, Google Drive renamed files after `EXTRA_SUBJECT`). The final implementation saves through the Storage Access Framework (`ACTION_CREATE_DOCUMENT`), which is consistent across all devices and providers.
 
 **File picker MIME type**: The initial implementation used `GetContent()` with `text/yaml` MIME type, which failed to find `.yaml` files in common file managers that don't register this MIME type. Fixed by using `StartActivityForResult()` with `ACTION_GET_CONTENT` and `*/*` MIME type, with YAML validation happening after file selection.
 
@@ -397,13 +401,13 @@ val iconBitmap = remember(app.packageName) {
 
 ### Overview
 
-Added a "Save Logs" button in the Debug section of the companion app's Settings screen. Pressing the button saves the current session's in-memory log buffer to a `.txt` file and shares it via Android's share intent, following the same `FileProvider` pattern as the YAML export. The log buffer (`AppLogBuffer`) collects significant events throughout the app lifecycle, including app startup, Pebble connection/disconnection, launch requests, import/export operations, and crashes.
+Added a "Save Logs" button in the Debug section of the companion app's Settings screen. Pressing the button saves the current session's in-memory log buffer to a `.txt` file through the Storage Access Framework (`ACTION_CREATE_DOCUMENT` system picker, suggested name `plauncher_logs.txt`). The log buffer (`AppLogBuffer`) collects significant events throughout the app lifecycle, including app startup, Pebble connection/disconnection, launch requests, import/export operations, and crashes.
 
 ### Analysis
 
 - **Previous state**: The companion app had no internal logging mechanism. The Debug section only contained a crash reports switch and a test crash button. Debugging issues required relying solely on `adb logcat`, which is impractical for field testing.
 - **Log buffer**: Created `AppLogBuffer` as a Kotlin `object` (singleton) with a 500-entry FIFO queue backed by `CopyOnWriteArrayList` with synchronized access for thread safety. Each entry records timestamp (formatted `yyyy-MM-dd HH:mm:ss.SSS`), level (`INFO`, `WARN`, `ERROR`, `DEBUG`), tag (component name), and message. Logs are volatile — not persisted between sessions.
-- **Export**: Writes `plauncher_logs.txt` to `cacheDir/exports/` (reusing the existing FileProvider `<cache-path>`), and shares via `Intent.ACTION_SEND` with `text/plain` MIME type. Empty buffer shows a Toast. Errors during save show a Toast.
+- **Export**: After the user picks a destination in the system document picker (suggested name `plauncher_logs.txt`), the log buffer content is written directly to the returned content URI via `ContentResolver.openOutputStream()`. Empty buffer shows a Toast before the picker opens; errors during save show a Toast. This replaced the original `cacheDir/exports/` + `FileProvider` + `ACTION_SEND` flow, which produced empty or randomly-named files depending on the recipient app (e.g. Amaze ignored `EXTRA_STREAM` for `text/plain` shares and saved under a timestamp-derived filename).
 - **Instrumentation**: Key points across `MainActivity`, `PebbleListenerService`, `CrashApplication`, and `LaunchActivity` are instrumented with `AppLogBuffer.info/warn/error/debug` calls using descriptive tags.
 
 ### Android Companion App (`apk/`) — ~100 lines changed across 6 files
@@ -415,7 +419,7 @@ Added a "Save Logs" button in the Debug section of the companion app's Settings 
 | `app/src/main/java/com/le0xff/plauncher/data/AppLogBuffer.kt` (new) | Created singleton `AppLogBuffer` with `LogEntry` data class, 500-entry FIFO buffer (`CopyOnWriteArrayList` + `synchronized`), `info/warn/error/debug` methods, `getEntries()`, `getLogsAsString()` (formatted as `[timestamp] LEVEL/TAG: message`), and `clear()`. |
 | `app/src/main/res/values/strings.xml` | Added 6 new strings: `button_save_logs` ("Save"), `settings_save_logs` ("Save logs"), `settings_save_logs_desc` ("Save current session logs to a text file"), `logs_saved_success` ("Logs saved successfully"), `logs_saved_error` ("Failed to save logs"), `logs_empty` ("No logs available"). |
 | `ui/SettingsScreen.kt` | Added `onSaveLogsClick` parameter (default `{}`). Added "Save logs" row in Debug accordion between crash reports switch and crash button, with title, description, and "Save" button. |
-| `MainActivity.kt` | Added import for `AppLogBuffer`. Added `onSaveLogsClick` lambda that reads buffer, checks empty, writes `plauncher_logs.txt` to `cacheDir/exports/`, obtains URI via `FileProvider`, and shares via `Intent.ACTION_SEND`. Passed `onSaveLogsClick` to `SettingsScreen`. Added log calls: `onCreate` (app started), `onResume` (activity resumed), export initiated, import initiated, import parsed/applied, save logs initiated. |
+| `MainActivity.kt` | Added import for `AppLogBuffer`. Added `saveLogsLauncher` using `CreateDocument("text/plain")` (SAF) — writes the buffer content to the picked URI at result time; `onSaveLogsClick` checks the buffer is non-empty, then launches the picker with suggested name `plauncher_logs.txt`; a `logSavePending` guard prevents double-picker crashes (reset on resume). Passed `onSaveLogsClick` to `SettingsScreen`. Added log calls: `onCreate` (app started), `onResume` (activity resumed), export initiated, import initiated, import parsed/applied, save logs initiated, logs saved / failed. |
 | `PebbleListenerService.kt` | Added import for `AppLogBuffer`. Added log calls: `onCreate` (service created), `onDestroy` (service destroyed), `handleWatchWelcome` (watch connected), `onAppClosed` (watch disconnected), `handleLaunchApp` (launch request for index), `onMessageReceived` catch block (error processing message), unknown packet type. |
 | `CrashApplication.kt` | Added import for `AppLogBuffer`. Added log call in uncaught exception handler (exception type and message). |
 | `LaunchActivity.kt` | Added import for `AppLogBuffer`. Added log calls: missing package name (warn), launching package, launch success, launch failed (error), no launch intent (warn). |
@@ -444,34 +448,37 @@ Thread-safe via `CopyOnWriteArrayList` + `synchronized` on mutable operations. F
 
 **Save logs callback** (`MainActivity.kt`):
 ```kotlin
+val saveLogsLauncher = rememberLauncherForActivityResult(
+    ActivityResultContracts.CreateDocument("text/plain")
+) { uri ->
+    if (uri == null) return@rememberLauncherForActivityResult
+    try {
+        val logContent = AppLogBuffer.getLogsAsString()
+        contentResolver.openOutputStream(uri)?.use { it.write(logContent.toByteArray()) }
+            ?: throw IOException("No output stream for $uri")
+        Toast.makeText(context, R.string.logs_saved_success, Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+        Toast.makeText(context, R.string.logs_saved_error, Toast.LENGTH_SHORT).show()
+    }
+}
+
 val onSaveLogsClick: () -> Unit = onSaveLogs@{
-    val entries = AppLogBuffer.getEntries()
-    if (entries.isEmpty()) {
-        Toast.makeText(context, R.string.logs_empty, Toast.LENGTH_SHORT).show()
-        return@onSaveLogs
+    if (!logSavePending) {
+        if (AppLogBuffer.getEntries().isEmpty()) {
+            Toast.makeText(context, R.string.logs_empty, Toast.LENGTH_SHORT).show()
+            return@onSaveLogs
+        }
+        logSavePending = true
+        saveLogsLauncher.launch("plauncher_logs.txt")
     }
-    val logContent = AppLogBuffer.getLogsAsString()
-    val exportsDir = File(context.cacheDir, "exports")
-    if (!exportsDir.exists()) exportsDir.mkdirs()
-    val file = File(exportsDir, "plauncher_logs.txt")
-    file.writeText(logContent)
-    val uri = FileProvider.getUriForFile(
-        context, "com.le0xff.plauncher.fileprovider", file
-    )
-    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_STREAM, uri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    startActivity(Intent.createChooser(shareIntent, getString(R.string.button_save_logs)))
 }
 ```
-Follows the exact same pattern as `onExportClick`: write to `cacheDir/exports/`, get URI via `FileProvider`, share with `ACTION_SEND`. Reuses existing `file_paths.xml` `<cache-path>` configuration.
+The empty-buffer check happens before the picker opens. The content is generated and written only after the user picks a destination, so nothing is written on cancel. The `logSavePending` flag (reset in `LaunchedEffect(resumeCounter)` when the activity resumes) prevents launching a second picker while one is open. This SAF flow replaced the original `cacheDir/exports/plauncher_logs.txt` + `FileProvider` + `ACTION_SEND` share intent: recipient apps handled the share inconsistently — Amaze ignored `EXTRA_STREAM` for `text/plain` shares and saved an empty file under a timestamp-derived name, which intermediate fixes (`EXTRA_SUBJECT`, `EXTRA_TEXT`, `application/octet-stream`) could not solve generically across all file managers. With SAF the name is always the one the user confirms and the content is always complete, on any device or storage provider.
 
 **Instrumentation points**:
 | Component | Events Logged |
 |---|---|
-| `MainActivity` | App started, activity resumed, export initiated, import initiated, import parsed (app count), import applied (app count), save logs initiated |
+| `MainActivity` | App started, activity resumed, export initiated, import initiated, import parsed (app count), import applied (app count), save logs initiated, app list exported / export failed, logs saved to document / failed |
 | `PebbleListenerService` | Service created/destroyed, watch connected/disconnected, launch request (index), unknown packet type, message processing error |
 | `CrashApplication` | Uncaught exception (type + message) |
 | `LaunchActivity` | Missing package name, launching package, launch success, launch failed, no launch intent |
@@ -513,7 +520,7 @@ Follows the exact same pattern as `onExportClick`: write to `cacheDir/exports/`,
 
 **Thread safety**: The buffer is accessed from both the main thread (Activities) and background threads (Service message handling). `CopyOnWriteArrayList` + `synchronized` on mutations ensures safe concurrent access without external coordination.
 
-**Reused FileProvider**: The existing `file_paths.xml` already defines `<cache-path name="exports" path="exports/">`, so no manifest or XML changes were needed.
+**SAF instead of share intent**: Both this feature and the YAML export (#21) save files through `ACTION_CREATE_DOCUMENT` rather than `ACTION_SEND` + `FileProvider`. The share-sheet approach depends on each recipient app's (often inconsistent) handling of `EXTRA_STREAM`/`EXTRA_TEXT`/`EXTRA_SUBJECT`; the SAF picker is a system UI that works identically on every device and with every document provider, requires no permissions, and has been available since API 19 (below the app's minSdk 24).
 
 **No-op safe**: `AppLogBuffer` calls never throw exceptions, so instrumentation cannot break existing flows.
 
