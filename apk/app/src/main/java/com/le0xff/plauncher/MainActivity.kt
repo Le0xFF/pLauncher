@@ -52,6 +52,7 @@ import com.le0xff.plauncher.data.AppDataStore
 import com.le0xff.plauncher.data.AppLogBuffer
 import com.le0xff.plauncher.data.ImportResult
 import com.le0xff.plauncher.data.YamlExportImport
+import com.le0xff.plauncher.media.MediaControlListenerService
 import com.le0xff.plauncher.model.LaunchApp
 import com.le0xff.plauncher.model.SortOrder
 import com.le0xff.plauncher.ui.AppTheme
@@ -260,6 +261,17 @@ class MainActivity : ComponentActivity() {
         viewModel.setConnectionStatus(getString(R.string.status_disconnected))
     }
 
+    // Flip the persisted play-on-launch pref back to OFF when notification access is missing,
+    // so a feature ON without permission can never trigger useless flows. No-op when the
+    // pref is already false (idempotent across repeated onResume calls).
+    private fun autoFlipPlayOnLaunchIfAccessMissing() {
+        if (!appDataStore.getPlayOnLaunch()) return
+        if (checkNotificationListenerAccess(this)) return
+        AppLogBuffer.warn("MainActivity", "Play on launch auto-disabled: notification access revoked")
+        viewModel.setPlayOnLaunch(false)
+        appDataStore.setPlayOnLaunch(false)
+    }
+
     // Ensure the auto-launch target index is within bounds; resets to 0 and syncs if out of range.
     private fun validateAutoLaunchTarget(apps: List<LaunchApp>) {
         val target = viewModel.autoLaunchTarget.value
@@ -282,6 +294,7 @@ class MainActivity : ComponentActivity() {
 
     // Load persisted data into ViewModel BEFORE setContent to avoid initial flash
     loadPersistedPrefs()
+    autoFlipPlayOnLaunchIfAccessMissing()
 
         setContent {
             val appTheme by viewModel.appTheme.collectAsState()
@@ -623,9 +636,22 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             playOnLaunch = playOnLaunch,
-                            onPlayOnLaunchChange = {
-                                viewModel.setPlayOnLaunch(it)
-                                dataStore.setPlayOnLaunch(it)
+                            onPlayOnLaunchChange = { newValue ->
+                                if (newValue && !checkNotificationListenerAccess(this)) {
+                                    Toast.makeText(
+                                        this,
+                                        R.string.play_on_launch_requires_notification_access,
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } else {
+                                    viewModel.setPlayOnLaunch(newValue)
+                                    dataStore.setPlayOnLaunch(newValue)
+                                    // With the feature off and nothing in flight, let the notification
+                                    // listener idle (best effort) so it stops consuming system notifications.
+                                    if (!newValue && !MediaControlListenerService.isFlowActive) {
+                                        MediaControlListenerService.stopListenerBestEffort()
+                                    }
+                                }
                             },
                             playOnLaunchTimeoutS = playOnLaunchTimeoutS,
                             onPlayOnLaunchTimeoutChange = { newValue ->
@@ -934,11 +960,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Increment resume counter to trigger permission recheck in Compose.
+    // Increment resume counter to trigger permission recheck in Compose; auto-flips the
+    // play-on-launch pref if notification access was revoked while it was ON.
     override fun onResume() {
         super.onResume()
         AppLogBuffer.debug("MainActivity", "Activity resumed")
         viewModel.onActivityResume()
+        autoFlipPlayOnLaunchIfAccessMissing()
     }
 
     // Close Pebble sender to free resources.
