@@ -258,7 +258,7 @@ After the fix, `s_loading` follows a clean state machine:
 
 ### Overview
 
-Added a proper app icon to the Android companion app (`apk/`). Implemented legacy mipmap bitmaps (API < 26), adaptive icons with background/foreground/monochrome layers (API 26+), and a branded splash screen with magenta background and logo. Created a POSIX-compliant generation script (`generate_icon.sh`) that accepts a `.kra` (Krita) or `.png` file as input, exports the PNG if needed, and produces all required resources. The PNG output is always written to `apk/pLauncher.png`.
+Added a proper app icon to the Android companion app (`apk/`). Implemented legacy mipmap bitmaps (API < 26), adaptive icons with background/foreground/monochrome layers (API 26+), and a branded splash screen with magenta background and logo. Created a generation script (`generate_icon.sh`) that accepts a `.kra` (Krita) or `.png` file as input, exports the PNG if needed, and produces all required resources. All generated PNGs are normalized to 8-bit RGBA so device decoders handle them consistently (see bug fixes below).
 
 ### Analysis
 
@@ -285,10 +285,10 @@ Added a proper app icon to the Android companion app (`apk/`). Implemented legac
 | `app/src/main/res/mipmap-xhdpi/ic_launcher.png` | Legacy icon 96×96 px. |
 | `app/src/main/res/mipmap-xxhdpi/ic_launcher.png` | Legacy icon 144×144 px. |
 | `app/src/main/res/mipmap-xxxhdpi/ic_launcher.png` | Legacy icon 192×192 px. |
-| `app/src/main/res/drawable/ic_launcher_bitmap.png` | Full-res source image for adaptive icon foreground. Referenced by `ic_launcher_foreground.xml` via `@drawable/ic_launcher_bitmap`. Moved from `drawable-nodpi/` to fix system permission screen display (see bug fix below). |
+| `app/src/main/res/drawable-nodpi/ic_launcher_bitmap.png` | 432×432 px source image for the adaptive icon foreground (AOSP convention: content inside the 66 dp safe zone). Referenced by `ic_launcher_foreground.xml` via `@drawable/ic_launcher_bitmap`, stored in `drawable-nodpi/`. |
 | `app/src/main/res/drawable-nodpi/splash_logo.png` | Splash screen image: logo trimmed to content, composited on magenta `#cf62a9` background. Generated via Python PIL. |
 | `app/src/main/res/drawable/ic_launcher_background.xml` | Solid magenta `#cf62a9` shape drawable for adaptive icon background. |
-| `app/src/main/res/drawable/ic_launcher_foreground.xml` | `<inset>` with 12dp margins pointing to `@drawable/ic_launcher_bitmap`. Scales logo to fit within safe zone. |
+| `app/src/main/res/drawable/ic_launcher_foreground.xml` | `<inset>` with 12dp margins on all sides pointing to `@drawable/ic_launcher_bitmap`. Scales logo to fit within the safe zone. |
 | `app/src/main/res/drawable/splash_background.xml` | `<bitmap>` drawable referencing `@drawable/splash_logo` with `gravity="fill"`. |
 | `app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml` | Adaptive icon with background, foreground, and monochrome layers. |
 | `app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml` | Same adaptive icon for round icon launchers. |
@@ -299,16 +299,17 @@ Added a proper app icon to the Android companion app (`apk/`). Implemented legac
 
 | File | Description |
 |---|---|
-| `generate_icon.sh` | POSIX-compliant shell script (`#!/bin/sh`) that accepts `.kra` or `.png` input. A `.kra` file is exported to PNG via `krita --export`; a `.png` is copied directly. The PNG output is always written to `apk/pLauncher.png`. Uses ImageMagick for mipmap resizing and Python PIL for splash screen generation. Other formats are rejected with an error. |
+| `generate_icon.sh` | Shell script that accepts `<source_kra_or_png> --apk\|--pbw`. A `.kra` file is exported to PNG via `krita --export`; a `.png` is copied. For `--apk`, the PNG lands in `drawable-nodpi/_src/` (hidden from Gradle) and all generated PNGs are normalized to 8-bit RGBA. Uses ImageMagick for mipmap/foreground generation and Python PIL for splash screen generation. Other formats are rejected with an error. |
 
 ### Key Implementation Details
 
-**Circular reference fix**: The original plan had `ic_launcher_foreground.xml` reference `@mipmap/ic_launcher`. On API 26+, `@mipmap/ic_launcher` resolves to the adaptive icon XML itself, creating a circular reference. Android silently falls back to a default icon. Fixed by copying the source image to `drawable/ic_launcher_bitmap.png` and having the foreground reference `@drawable/ic_launcher_bitmap` instead. The bitmap lives in `drawable/` (not `drawable-nodpi/`) so the reference resolves within the same resource directory — see bug fix section below for why this matters.
+**Circular reference fix**: The original plan had `ic_launcher_foreground.xml` reference `@mipmap/ic_launcher`. On API 26+, `@mipmap/ic_launcher` resolves to the adaptive icon XML itself, creating a circular reference. Android silently falls back to a default icon. Fixed by having the foreground reference `@drawable/ic_launcher_bitmap` instead — a dedicated 432×432 px bitmap stored in `drawable-nodpi/`, following the AOSP adaptive-icon convention (see bug fixes below for why this matters on some devices).
 
-**Foreground inset sizing**: The adaptive icon canvas is 108 dp with a 66 dp safe zone (21 dp margin). Testing showed:
+**Foreground inset sizing**: The adaptive icon canvas is 108 dp with a 66 dp safe zone (21 dp margin). Tested values:
 - 21dp inset (plan default): Logo appeared too small compared to other apps
 - 0dp inset (no inset): Logo edges clipped by launcher masks
 - 12dp inset (final): Good compromise — logo fills ~84/108 dp of canvas while avoiding edge clipping
+- 16dp inset (tested later): Safe on launcher/overlay pages, but on OEM settings pages that render the foreground without proper downscaling it made the logo visibly smaller than expected; reverted to 12dp.
 
 **Splash screen force-dark fix**: Android API 29+ applies "force dark" to light themes, inverting colors. A solid magenta `#cf62a9` as `windowBackground` was inverted to black. Two-layer fix:
 1. Use a drawable (`@drawable/splash_background`) instead of a raw color — drawables are not force-dark inverted
@@ -325,21 +326,22 @@ Added a proper app icon to the Android companion app (`apk/`). Implemented legac
 The splash drawable uses `android:gravity="fill"` which scales the image to fill the screen. Since the image contains only the logo on magenta (no extra padding), Android scales it proportionally.
 
 **KRA to PNG export**: The script detects the input format by file extension:
-- `.kra`: Checks `krita` is in PATH, runs `krita --export --export-filename <apk/pLauncher.png> <source.kra>` with output suppressed (Krita prints warnings to stderr). Requires display (X11/Wayland available). `QT_QPA_PLATFORM=offscreen` was tested and fails on Krita 5.3.
-- `.png`: Copies the file to `apk/pLauncher.png` (backward compatible with original usage).
+- `.kra`: Checks `krita` is in PATH, runs `krita --export --export-filename <out.png> <source.kra>` with output suppressed (Krita prints warnings to stderr). Requires display (X11/Wayland available). `QT_QPA_PLATFORM=offscreen` was tested and fails on Krita 5.3. For `--apk`, the export lands in `drawable-nodpi/_src/<source_name>.png`.
+- `.png`: Copies the file into the same destination directory (backward compatible with original usage).
 - Other extensions: Rejected with descriptive error.
 
-After acquisition, the PNG in `apk/pLauncher.png` is validated (square check via `identify`) before the icon generation pipeline proceeds.
+After acquisition, the PNG is validated (square check via `identify`) before the icon generation pipeline proceeds.
+
+**8-bit normalization**: Krita exports are natively 16-bit RGBA, and some Android decoders mis-handle 16-bit PNGs (e.g., not downscaling them correctly, so a settings page can render the foreground at full size against its mask). All ImageMagick `convert` invocations that emit icons therefore pass `-depth 8` (mipmaps + 432×432 foreground), guaranteeing 8-bit RGBA output regardless of source bit depth; a re-encode fallback (`-colorspace sRGB -depth 8`) rewrites any PNG still reported as 16-bit after generation. The PIL-generated splash logo is already 8-bit by default.
 
 **Generation script** (`generate_icon.sh`):
 ```sh
 #!/bin/sh
 set -e
 
-# ... argument check, SCRIPT_DIR, APK_DIR, RES_DIR ...
+# ... argument check (<source_kra_or_png> --apk|--pbw), SCRIPT_DIR, APK_DIR, RES_DIR ...
 
 # Format detection and source acquisition
-PNG_OUTPUT="${APK_DIR}/pLauncher.png"
 case "${SOURCE##*.}" in
     kra)
         command -v krita >/dev/null 2>&1 || { printf "Error: krita not found in PATH\n"; exit 1; }
@@ -358,7 +360,7 @@ esac
 
 # Verify source is square PNG (runs on the acquired PNG)
 SIZE=$(identify -format "%wx%h" "$SOURCE")
-# ... square check, mipmap generation, XML resources ...
+# ... square check, mipmap generation (-depth 8), foreground 432x432 (-depth 8), XML resources ...
 ```
 
 ### Code Statistics
@@ -366,12 +368,12 @@ SIZE=$(identify -format "%wx%h" "$SOURCE")
 | Component | Files | Lines changed |
 |---|---|---|
 | Android Manifest | 1 | ~4 (icon attributes, theme changes) |
-| Mipmap PNGs | 5 | New (generated) |
-| Drawable PNGs | 2 | New (foreground in `drawable/`, splash in `drawable-nodpi/`) |
+| Mipmap PNGs | 5 | New (generated, 8-bit RGBA) |
+| Drawable PNGs | 2 | New (foreground in `drawable-nodpi/`, splash in `drawable-nodpi/`) |
 | Drawable XML | 3 | New (background, foreground, splash) |
 | Mipmap XML | 2 | New (adaptive icon, round) |
 | Theme XML | 2 | New (values, values-v29) |
-| Script | 1 | ~200 (generate_icon.sh, updated with KRA export) |
+| Script | 1 | ~200 (generate_icon.sh, KRA export + 8-bit normalization) |
 | **Total** | **16** | **~204** |
 
 ### Build Status
@@ -381,17 +383,17 @@ SIZE=$(identify -format "%wx%h" "$SOURCE")
 
 ### Design Decisions
 
-**KRA as source of truth**: The `.kra` Krita project file is the authoritative source for the icon. Editing the `.kra` in Krita and re-running `./generate_icon.sh pLauncher.kra` produces a fresh PNG and regenerates all Android resources. This eliminates the manual export step.
+**KRA as source of truth**: The `.kra` Krita project file is the authoritative source for the icon. Editing the `.kra` in Krita and re-running `./generate_icon.sh apk/pLauncher_apk.kra --apk` produces a fresh PNG and regenerates all Android resources. This eliminates the manual export step.
 
 **Backward compatibility**: The script accepts both `.kra` and `.png` inputs. Passing a `.png` maintains the original workflow for users who prefer to work with exported PNGs directly.
 
 **Krita display requirement**: `QT_QPA_PLATFORM=offscreen` does not work with Krita 5.3 on Linux (BadWindow X error). The script runs Krita without offscreen mode, requiring an available X11/Wayland display. Krita's stderr output (style warnings, ICC profile warnings, tile leak warnings) is suppressed with `>/dev/null 2>&1`.
 
-**Fixed output path**: The PNG is always written to `apk/pLauncher.png` regardless of input format. This ensures the Android project references a stable location, and the generation script can always find the PNG for downstream processing.
+**Foreground as `drawable-nodpi` bitmap**: The foreground references a dedicated 432×432 px bitmap in `drawable-nodpi/` (AOSP adaptive-icon convention) instead of the mipmap, avoiding a circular reference on API 26+ where `@mipmap/ic_launcher` resolves to the adaptive icon XML itself. The full-res source PNG is kept only in `drawable-nodpi/_src/`, hidden from Gradle and excluded from APK packaging.
 
-**Foreground as drawable, not mipmap reference**: Avoids circular reference on API 26+. The source image is stored in `drawable/` so the foreground's `@drawable/ic_launcher_bitmap` reference resolves within the same resource directory. Originally placed in `drawable-nodpi/`, this caused a cross-directory reference that some device system UIs (notably Samsung's `ACTION_MANAGE_OVERLAY_PERMISSION` screen) failed to resolve, falling back to the default Android robot icon and the package name instead of the app label. Moved to `drawable/` to fix this.
+**Inset over bitmap for foreground**: `<inset>` with 12dp margins on all sides ensures the logo fits within the adaptive icon safe zone across all launcher mask shapes (circle, squircle, teardrop). Tested values: 0dp clips edges, 21dp too small, 16dp made the logo too small on OEM settings pages that skip downscaling (reverted), 12dp balanced.
 
-**Inset over bitmap for foreground**: `<inset>` with 12dp margins ensures the logo fits within the adaptive icon safe zone across all launcher mask shapes (circle, squircle, teardrop). Tested values: 0dp clips edges, 21dp too small, 12dp balanced.
+**8-bit PNG normalization**: All generated icons are normalized to 8-bit RGBA (`convert -depth 8`) because Krita exports are natively 16-bit and some Android decoders mis-handle 16-bit PNGs. This removes source bit depth as a variable in icon rendering across launchers and system UI pages.
 
 **Splash uses drawable, not color**: Android's force-dark feature inverts solid colors in `windowBackground` under system dark mode (magenta → black). Using a bitmap drawable avoids this inversion. Combined with `forceDarkAllowed=false` on API 29+ for reliability.
 
@@ -399,17 +401,19 @@ SIZE=$(identify -format "%wx%h" "$SOURCE")
 
 **POSIX-compliant script**: Uses `#!/bin/sh`, `[` instead of `[[`, `printf` instead of `echo`, `set -e` instead of `set -euo pipefail`. The Python splash generation is the only non-POSIX dependency (PIL/Pillow), required because ImageMagick cannot reliably composite alpha-transparent logos onto colored backgrounds with matching dimensions.
 
-**Source image preserved**: The original `pLauncher.kra` stays in the project root. The script exports and transforms it as needed. Users regenerate all resources by running `./generate_icon.sh pLauncher.kra`.
+**Source image preserved**: The original `.kra` stays in the project (`apk/pLauncher_apk.kra`). The script exports and transforms it as needed. Users regenerate all resources by running `./generate_icon.sh apk/pLauncher_apk.kra --apk`.
 
 **Unchanged**: Pebble watch app, communication protocol, existing Android app features. All existing functionality remains fully operational.
 
-### Bug Fix: Adaptive Icon Not Displayed on System Permission Screen
+### Bug Fix: Generic Icon on System Settings Pages After Install
 
-**Problem**: On some devices (Samsung), the `ACTION_MANAGE_OVERLAY_PERMISSION` system screen showed the default Android robot icon and the package name (`com.le0xff.plauncher`) instead of the app's custom icon and label ("pLauncher"). This occurred because `ic_launcher_foreground.xml` (in `drawable/`) referenced `@drawable/ic_launcher_bitmap`, but the bitmap lived in `drawable-nodpi/`. The system's PackageManager used a Resources context that could not resolve this cross-directory reference, causing the entire adaptive icon to fail and fall back to the Android default.
+**Problem**: On some devices, system settings pages ("Show over other apps" / notification access) showed a generic or wrong icon for pLauncher right after install — e.g., a full-size logo rendered against the mask instead of the masked adaptive icon, or a default icon until reboot.
 
-**Fix**: Moved `ic_launcher_bitmap.png` from `drawable-nodpi/` to `drawable/`. The `@drawable/ic_launcher_bitmap` reference in `ic_launcher_foreground.xml` now resolves within the same resource directory, working correctly in all system contexts. The `generate_icon.sh` script was also updated to output the bitmap to `drawable/`, so re-running the script after KRA edits will maintain the fix.
+**Investigation**: The APK resource table was verified clean via `aapt2` (`mipmap/ic_launcher` points to the adaptive icon XML for all densities, `drawable/ic_launcher_bitmap` present as a nodpi PNG entry). Post-install logcat showed no decode errors. The root cause was the **bit depth** of the generated PNGs: Krita exports are natively 16-bit RGBA, and some device decoders mis-handle 16-bit PNGs (incorrect downscaling or failed decode on certain code paths), so the foreground rendered at full size or fell back to a default icon.
 
-**Verification**: Build passes, system permission screen now shows the correct icon and "pLauncher" label. Legacy mipmaps, splash screen, and adaptive icon descriptors are unchanged.
+**Fix**: Normalize every generated PNG to **8-bit RGBA**. All ImageMagick `convert` invocations that emit icons (5 mipmap buckets + the 432×432 foreground bitmap) pass `-depth 8`; a verification loop re-encodes any output still reported as 16-bit (`-colorspace sRGB -depth 8`). The PIL-generated splash logo is 8-bit by default. This removes source bit depth as a variable in icon rendering across launchers and system UI pages.
+
+**Verification**: With 8-bit resources, the "Show over other apps" page shows the correct pLauncher icon immediately after `adb install -r`, without a reboot. Launcher, splash screen, and legacy mipmaps unchanged. One residual issue remains on this OEM (Nothing OS / Android 13): the "App & device notifications" page still renders the foreground touching the mask edge, consistent with that page not downscaling the 432 px foreground. A 16dp inset mitigates it but shrinks the logo elsewhere, so 12dp is kept and the residual is tracked as an OEM limitation.
 
 ## #29 — Watchapp Launcher Icon and Build Integration
 
