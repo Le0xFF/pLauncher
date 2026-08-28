@@ -17,6 +17,7 @@ class LaunchActivity : ComponentActivity() {
         const val ACTION_LAUNCH_RESULT = "com.le0xff.plauncher.LAUNCH_RESULT"
         private const val EXTRA_RESULT = "result"
         const val EXTRA_PACKAGE_NAME = "package_name"
+        const val EXTRA_SCREEN_WAKED_BY_US = "screen_waked_by_us"
     }
 
     // Trampoline: extract package name, resolve launch intent, start target app, broadcast result, finish immediately.
@@ -28,31 +29,33 @@ class LaunchActivity : ComponentActivity() {
             finish()
             return
         }
-        AppLogBuffer.info("LaunchActivity", "Launching package: $packageName")
+        val wokenByUs = intent.getBooleanExtra(EXTRA_SCREEN_WAKED_BY_US, false)
+        AppLogBuffer.info("LaunchActivity", "Launching package: $packageName (wokenByUs=$wokenByUs)")
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
         if (launchIntent != null) {
             try {
                 startActivity(launchIntent)
                 AppLogBuffer.info("LaunchActivity", "Launch success: $packageName")
-                sendLaunchResult(true, packageName)
+                sendLaunchResult(true, packageName, wokenByUs)
             } catch (e: Exception) {
                 AppLogBuffer.error("LaunchActivity", "Launch failed: ${e.message}")
-                sendLaunchResult(false, packageName)
+                sendLaunchResult(false, packageName, wokenByUs)
             }
         } else {
             AppLogBuffer.warn("LaunchActivity", "No launch intent for: $packageName")
-            sendLaunchResult(false, packageName)
+            sendLaunchResult(false, packageName, wokenByUs)
         }
         finish()
     }
 
-    private fun sendLaunchResult(success: Boolean, packageName: String? = null) {
+    private fun sendLaunchResult(success: Boolean, packageName: String? = null, wokenByUs: Boolean = false) {
         val intent = Intent(ACTION_LAUNCH_RESULT).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             putExtra(EXTRA_RESULT, if (success) 1 else 0)
             if (packageName != null) {
                 putExtra(EXTRA_PACKAGE_NAME, packageName)
             }
+            putExtra(EXTRA_SCREEN_WAKED_BY_US, wokenByUs)
         }
         sendBroadcast(intent)
     }

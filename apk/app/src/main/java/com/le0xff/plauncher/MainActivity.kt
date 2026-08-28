@@ -115,8 +115,11 @@ class AppViewModel : ViewModel() {
     private val _playOnLaunch = MutableStateFlow(false)
     val playOnLaunch: StateFlow<Boolean> = _playOnLaunch.asStateFlow()
 
-    private val _playOnLaunchTimeoutS = MutableStateFlow(30)
+    private val _playOnLaunchTimeoutS = MutableStateFlow(AppDataStore.DEFAULT_PLAY_ON_LAUNCH_TIMEOUT_S)
     val playOnLaunchTimeoutS: StateFlow<Int> = _playOnLaunchTimeoutS.asStateFlow()
+
+    private val _playOnLaunchFirstPhaseS = MutableStateFlow(AppDataStore.DEFAULT_PLAY_ON_LAUNCH_FIRST_PHASE_S)
+    val playOnLaunchFirstPhaseS: StateFlow<Int> = _playOnLaunchFirstPhaseS.asStateFlow()
 
     private val _autoLaunchEnabled = MutableStateFlow(false)
     val autoLaunchEnabled: StateFlow<Boolean> = _autoLaunchEnabled.asStateFlow()
@@ -199,6 +202,14 @@ class AppViewModel : ViewModel() {
         _playOnLaunchTimeoutS.value = AppDataStore.DEFAULT_PLAY_ON_LAUNCH_TIMEOUT_S
     }
 
+    fun setPlayOnLaunchFirstPhaseS(value: Int) {
+        _playOnLaunchFirstPhaseS.value = value
+    }
+
+    fun onPlayOnLaunchFirstPhaseInvalid() {
+        _playOnLaunchFirstPhaseS.value = AppDataStore.DEFAULT_PLAY_ON_LAUNCH_FIRST_PHASE_S
+    }
+
     fun setAutoLaunchEnabled(value: Boolean) {
         _autoLaunchEnabled.value = value
     }
@@ -243,6 +254,7 @@ class MainActivity : ComponentActivity() {
         viewModel.setAutoClose(appDataStore.getAutoClose())
         viewModel.setPlayOnLaunch(appDataStore.getPlayOnLaunch())
         viewModel.setPlayOnLaunchTimeoutS(appDataStore.getPlayOnLaunchTimeoutS())
+        viewModel.setPlayOnLaunchFirstPhaseS(appDataStore.getPlayOnLaunchFirstPhaseS())
         viewModel.setAutoLaunchEnabled(appDataStore.getAutoLaunchEnabled())
         viewModel.setAutoLaunchTarget(appDataStore.getAutoLaunchTarget())
         viewModel.setConnectionStatus(getString(R.string.status_disconnected))
@@ -290,6 +302,7 @@ class MainActivity : ComponentActivity() {
                 val autoClose by viewModel.autoClose.collectAsState()
                 val playOnLaunch by viewModel.playOnLaunch.collectAsState()
                 val playOnLaunchTimeoutS by viewModel.playOnLaunchTimeoutS.collectAsState()
+                val playOnLaunchFirstPhaseS by viewModel.playOnLaunchFirstPhaseS.collectAsState()
                 val autoLaunchEnabled by viewModel.autoLaunchEnabled.collectAsState()
                 val autoLaunchTarget by viewModel.autoLaunchTarget.collectAsState()
 
@@ -620,6 +633,12 @@ class MainActivity : ComponentActivity() {
                                 dataStore.setPlayOnLaunchTimeoutS(newValue)
                             },
                             onPlayOnLaunchTimeoutInvalid = { viewModel.onPlayOnLaunchTimeoutInvalid() },
+                            playOnLaunchFirstPhaseS = playOnLaunchFirstPhaseS,
+                            onPlayOnLaunchFirstPhaseChange = { newValue ->
+                                viewModel.setPlayOnLaunchFirstPhaseS(newValue)
+                                dataStore.setPlayOnLaunchFirstPhaseS(newValue)
+                            },
+                            onPlayOnLaunchFirstPhaseInvalid = { viewModel.onPlayOnLaunchFirstPhaseInvalid() },
                             autoLaunch = autoLaunchEnabled,
                             onAutoLaunchChange = {
                                 viewModel.setAutoLaunchEnabled(it)

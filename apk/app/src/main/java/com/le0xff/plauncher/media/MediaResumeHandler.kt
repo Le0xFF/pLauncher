@@ -9,6 +9,7 @@ package com.le0xff.plauncher.media
 import android.content.Context
 import com.le0xff.plauncher.data.AppDataStore
 import com.le0xff.plauncher.data.AppLogBuffer
+import com.le0xff.plauncher.util.ScreenWakeHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -24,14 +25,15 @@ class MediaResumeHandler(
         const val MIN_EFFECTIVE_TIMEOUT_S = 20
     }
 
-    fun resumeInBackground(packageName: String, scope: CoroutineScope) {
+    fun resumeInBackground(packageName: String, scope: CoroutineScope, wokenByUs: Boolean = false) {
+        AppLogBuffer.info(TAG, "resume flow will turn screen off at end: $wokenByUs")
         scope.launch {
-            runCatching { resumePlayback(packageName) }
+            runCatching { resumePlayback(packageName, wokenByUs) }
                 .onFailure { e -> AppLogBuffer.error(TAG, "resumePlayback failed for $packageName: ${e.message}") }
         }
     }
 
-    private suspend fun resumePlayback(packageName: String) {
+    private suspend fun resumePlayback(packageName: String, wokenByUs: Boolean) {
         AppLogBuffer.info(TAG, "Starting media resume for $packageName")
         val storedS = dataStore?.getPlayOnLaunchTimeoutS() ?: AppDataStore.DEFAULT_PLAY_ON_LAUNCH_TIMEOUT_S
         val timeoutS = maxOf(
@@ -42,10 +44,33 @@ class MediaResumeHandler(
             AppLogBuffer.warn(TAG, "Stored timeout ${storedS}s is below the effective minimum, using ${timeoutS}s")
         }
         val timeoutMs = timeoutS * MS_PER_SECOND
-        val dispatched = MediaControlListenerService.requestResume(context, packageName, timeoutMs)
+        // User-configurable first-phase window: how long to wait for the launched app's media
+        // session before re-launching it. Falls back to a sane default if unset.
+        val storedFirstPhaseS = dataStore?.getPlayOnLaunchFirstPhaseS()
+            ?: AppDataStore.DEFAULT_PLAY_ON_LAUNCH_FIRST_PHASE_S
+        val firstPhaseS = storedFirstPhaseS.coerceIn(
+            AppDataStore.MIN_PLAY_ON_LAUNCH_FIRST_PHASE_S,
+            AppDataStore.MAX_PLAY_ON_LAUNCH_FIRST_PHASE_S
+        )
+        val firstPhaseMs = firstPhaseS * MS_PER_SECOND
+        // Only turn the screen off at the end of the flow if we are the ones who turned it on.
+        val onFlowFinished: (() -> Unit)? = if (wokenByUs) {
+            { runCatching { ScreenWakeHelper.turnScreenOff(context) }
+                .onFailure { e -> AppLogBuffer.warn(TAG, "Failed to turn screen off after resume: ${e.message}") } }
+        } else {
+            null
+        }
+        val dispatched = MediaControlListenerService.requestResume(
+            context,
+            packageName,
+            timeoutMs,
+            firstPhaseMs,
+            onFlowFinished
+        )
         if (!dispatched) {
             AppLogBuffer.warn(TAG, "Notification access unavailable, sending legacy broadcast only")
             LegacyBroadcastFallback.sendPlay(context, packageName)
+            onFlowFinished?.invoke()
         }
     }
 }
