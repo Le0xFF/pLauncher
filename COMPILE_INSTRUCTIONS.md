@@ -14,7 +14,7 @@ Icons are generated manually from the Krita project files using `generate_icon.s
 
 The script accepts either `.kra` (Krita project, exported via `krita --export`) or `.png` files. Each target flag determines which pipeline runs:
 
-- `--apk`: Exports PNG to `apk/app/src/main/res/drawable-nodpi/_src/` (hidden from Gradle), generates legacy mipmaps, adaptive icon XML, foreground drawable, and splash screen.
+- `--apk`: Exports PNG to `apk/app/src/main/res/drawable-nodpi/_src/` (hidden from Gradle and excluded from APK packaging), generates legacy mipmaps, adaptive icon XML, and splash screen. The foreground drawable is generated as `drawable-nodpi/ic_launcher_bitmap.png` (432×432 px, AOSP adaptive-icon convention with content inside the 66dp safe zone); the full-res source PNG is no longer copied into `drawable/`. All generated PNGs are normalized to **8-bit RGBA** (`convert -depth 8`), because Krita exports are natively 16-bit and some Android decoders mis-handle 16-bit PNGs (e.g., icons rendered at full size without proper downscaling in system UI pages). The adaptive icon foreground uses a **16dp inset** on all sides (`ic_launcher_foreground.xml`) so the logo stays clear of system UI masks even if the bitmap is not downscaled.
 - `--pbw`: Exports PNG directly to `pbw/resources/images/app_launcher_icon.png` for the Pebble SDK.
 
 **Prerequisites for icon generation**:
