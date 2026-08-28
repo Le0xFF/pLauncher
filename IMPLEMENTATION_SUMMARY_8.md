@@ -78,3 +78,59 @@ Required user setup: enable **Notification access** for pLauncher under *Setting
 5. **Auto-launch from watchapp**: behaves consistently with the switch state.
 6. **Custom timeout**: set e.g. 45 s in the settings field → an app creating its session at ~35 s is still resumed (with the 30 s default it would only succeed via the re-launch pass or fail).
 7. **Empty/invalid timeout field + focus left on the field**: clear the value (it stays shown as invalid) and launch from the watch → resume still works, because `MediaResumeHandler` applies the 20 s effective floor; log shows "Stored timeout Xs is below the effective minimum, using 20s".
+@impl8
+## 41 - Touch input (swipe + tap) for emery in the watchapp
+
+### Overview
+
+Added touchscreen support to the pLauncher watchapp for Pebble Time 2 (`emery`):
+
+- **Swipe up** (finger moves bottom→top) → list advances to the next app (`app_list_next()`).
+- **Swipe down** (finger moves top→bottom) → list goes back to the previous app (`app_list_prev()`). Both wrap around at the ends.
+- **Single tap** anywhere on the screen → launches the selected app (`send_launch_app(current_index)`), identical behavior to the physical SELECT button.
+
+All gestures are ignored while the app list is loading (`packets_is_loading()` guard), matching the existing click-handler guards. On basalt (no touchscreen) the whole module compiles to SDK no-ops and is simply inert; the build succeeds unchanged for both targets.
+
+### Why the raw touch stream instead of the recognizer API
+
+The original plan used the window recognizer API (`window_attach_recognizer` with `tap_recognizer_create` / `pan_recognizer_create`, plus `window_set_touch_bridge_disabled`). On a real emery device this produced **zero recognizer callbacks** even though:
+
+- `touch_service_is_enabled()` returned true,
+- the raw `touch_service_subscribe` stream delivered every touchdown/liftoff with `non_navigational = 0` (interaction session active),
+- the system's own touch-navigation bridge (`app_touch_navigation_enable(true)`) also did not respond to touches.
+
+Device testing (via `pebble logs --phone=<ip>`) proved the recognizer path is non-functional on the current firmware while the raw stream works fine. The fix — confirmed against three working emery reference apps (touch-tone, pebble-calculator, pebble-2048-touch, all of which use only the raw stream and no recognizers/bridge calls) — was to reimplement gesture detection directly on the raw `TouchEvent` stream.
+
+### Implementation
+
+A single `touch_handler(const TouchEvent *, void *)` classifies each gesture:
+
+- **Touchdown**: records the start position, timestamp, and resets the max-movement tracker; marks the gesture active.
+- **PositionUpdate**: tracks the maximum displacement from the touchdown point (for tap validation).
+- **Liftoff**: finishes the gesture:
+  - `|Δy| >= TOUCH_SWIPE_MIN_DELTA_PX` → swipe; negative Δy = up = `app_list_next()`, positive Δy = down = `app_list_prev()`, then `window_main_update_display()`.
+  - otherwise, if `dt <= TOUCH_TAP_TIMEOUT_MS` and max movement `<= TOUCH_TAP_MAX_MOVE_PX` → valid tap → `send_launch_app(app_list_get_current_index())` (skipped when the list is empty or loading).
+  - touches flagged `non_navigational` (idle-watchface contacts) are never acted upon.
+
+Constants live in `window_main_touch.h` (initial estimates, not yet tuned on device): `TOUCH_SWIPE_MIN_DELTA_PX 40`, `TOUCH_TAP_MAX_MOVE_PX 16`, `TOUCH_TAP_TIMEOUT_MS 300`.
+
+Subscription is guarded by `touch_service_is_enabled()` and happens in `window_load` via `window_main_touch_init()`; `window_unload` calls `window_main_touch_deinit()` which unsubscribes. No `#ifdef` platform guards are needed: on basalt every touch API compiles to a `(0)` no-op, so the same source builds for both platforms.
+
+### Files added
+
+| File | Purpose |
+|---|---|
+| `pbw/src/c/window_main_touch.h` | Gesture threshold constants and `window_main_touch_init()` / `window_main_touch_deinit()` declarations |
+| `pbw/src/c/window_main_touch.c` | Raw-stream touch handler with tap/swipe classification, loading guards, and subscribe/unsubscribe lifecycle |
+
+### Files modified
+
+| File | Change |
+|---|---|
+| `pbw/src/c/window_main.c` | Includes `window_main_touch.h`; calls `window_main_touch_init()` in `window_load` after the click-config provider and `window_main_touch_deinit()` in `window_unload` |
+
+### Known limitations
+
+- Thresholds are initial estimates, not tuned on device; smaller/slower swipes may need `TOUCH_SWIPE_MIN_DELTA_PX` lowered.
+- A slow swipe that stops mid-gesture and then lifts is still recognized as a swipe (no dwell/in-motion check at liftoff); impact is limited to one extra list step.
+- The window recognizer API remains unusable on the tested firmware; any future feature relying on it would hit the same wall.
