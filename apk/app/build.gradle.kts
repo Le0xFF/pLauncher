@@ -1,4 +1,6 @@
+import java.io.File
 import java.security.MessageDigest
+import java.util.Properties
 import java.util.regex.Pattern
 
 plugins {
@@ -11,6 +13,28 @@ plugins {
 android {
     namespace = "com.le0xff.plauncher"
     compileSdk = 36
+
+    val localPropsFile = File("${System.getenv("HOME")}/ANDROID/local.properties")
+    val localProps = if (localPropsFile.exists()) {
+        Properties().apply { localPropsFile.inputStream().use { load(it) } }
+    } else {
+        Properties()
+    }
+    // Base dir for resolving relative paths in the external local.properties.
+    val propsBaseDir = File(System.getenv("HOME") ?: "", "ANDROID").absoluteFile
+
+    signingConfigs {
+        create("release") {
+            val jksPath = localProps.getProperty("release.jks.file")
+                ?: error("release.jks.file not set in ${localPropsFile}")
+            val resolved = jksPath.replace("\${HOME}", System.getenv("HOME") ?: "")
+            storeFile = if (resolved.startsWith("/")) File(resolved).absoluteFile
+            else File(propsBaseDir, resolved).canonicalFile
+            storePassword = localProps.getProperty("release.jks.password", "")
+            keyAlias = localProps.getProperty("release.jks.key.alias", "release")
+            keyPassword = localProps.getProperty("release.jks.key.password", "")
+        }
+    }
 
     val majorVersion = "1"
     val minorVersion = "0"
@@ -37,6 +61,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
@@ -216,4 +241,12 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.con
     dependsOn(bundleWatchPbw)
     dependsOn(generatePbwInfo)
     dependsOn(lintApk)
+}
+
+// The lint vital analysis task (part of assembleRelease) reads the merged assets
+// directory that bundleWatchPbw / generatePbwInfo write into; declare an explicit
+// dependency so Gradle orders them before it.
+tasks.matching { it.name == "lintVitalAnalyzeRelease" || it.name == "generateReleaseLintVitalReportModel" }.configureEach {
+    dependsOn(bundleWatchPbw)
+    dependsOn(generatePbwInfo)
 }
