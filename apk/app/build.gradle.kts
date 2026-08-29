@@ -10,6 +10,12 @@ plugins {
     alias(libs.plugins.detekt)
 }
 
+// Shared semantic version for both the companion app and the bundled watchapp.
+val majorVersion = "1"
+val minorVersion = "0"
+val patchVersion = "0"
+val appVersionName = "$majorVersion.$minorVersion.$patchVersion"
+
 android {
     namespace = "com.le0xff.plauncher"
     compileSdk = 36
@@ -36,16 +42,12 @@ android {
         }
     }
 
-    val majorVersion = "1"
-    val minorVersion = "0"
-    val patchVersion = "0"
-
     defaultConfig {
         applicationId = "com.le0xff.plauncher"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
-        versionName = "$majorVersion.$minorVersion.$patchVersion"
+        versionName = appVersionName
 
         buildConfigField("String", "MAJOR_VERSION", "\"$majorVersion\"")
         buildConfigField("String", "MINOR_VERSION", "\"$minorVersion\"")
@@ -136,8 +138,28 @@ val lintPbw = tasks.register<Exec>("lintPbw") {
     }
 }
 
+// Generate pbw/package.json from the .template, injecting the shared semver so the
+// watchapp versionLabel always matches the companion app version.
+val generatePbwPackageJson = tasks.register("generatePbwPackageJson") {
+    val templateFile = File(pbwDir, "package.json.template")
+    val outputFile = File(pbwDir, "package.json")
+    inputs.file(templateFile)
+    outputs.file(outputFile)
+    onlyIf {
+        if (!templateFile.exists()) {
+            logger.warn("WARNING: generatePbwPackageJson skipped — package.json.template not found.")
+        }
+        templateFile.exists()
+    }
+
+    doLast {
+        if (!templateFile.exists()) return@doLast
+        outputFile.writeText(templateFile.readText().replace("__VERSION__", appVersionName))
+    }
+}
+
 val buildWatchapp = tasks.register<Exec>("buildWatchapp") {
-    dependsOn(lintPbw)
+    dependsOn(lintPbw, generatePbwPackageJson)
     workingDir = pbwDir
     commandLine = listOf("pebble", "build")
     isIgnoreExitValue = true

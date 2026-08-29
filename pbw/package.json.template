@@ -1,0 +1,56 @@
+{
+  "name": "pLauncher",
+  "author": "Le0xFF",
+  "version": "__VERSION__",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "pLauncher",
+    "uuid": "07b1efa9-3d32-423c-b0e7-572cbc0893b8",
+    "sdkVersion": "3",
+    "enableMultiJS": false,
+    "targetPlatforms": [
+      "basalt",
+      "emery"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "companionApp": {
+      "android": {
+        "url": "https://github.com/le0xff/pLauncher",
+        "apps": [
+          {
+            "package": "com.le0xff.plauncher"
+          }
+        ]
+      }
+    },
+    "resources": {
+      "media": [
+        {
+          "type": "bitmap",
+          "name": "APP_ICON",
+          "file": "images/app_launcher_icon.png",
+          "menuIcon": true
+        },
+        {
+          "type": "bitmap",
+          "name": "ICON_CARET_UP",
+          "file": "images/icon_caret_up.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ICON_CARET_DOWN",
+          "file": "images/icon_caret_down.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ICON_ROCKET",
+          "file": "images/icon_rocket.png"
+        }
+      ]
+    }
+  }
+}
