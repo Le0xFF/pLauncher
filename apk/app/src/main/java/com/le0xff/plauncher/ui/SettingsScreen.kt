@@ -57,6 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import com.le0xff.plauncher.BuildConfig
 import com.le0xff.plauncher.PbwInstaller
 import com.le0xff.plauncher.R
 import com.le0xff.plauncher.data.AppDataStore
@@ -739,7 +740,12 @@ fun SettingsScreen(
 
         val githubRepoUrl = stringResource(R.string.github_repo_url)
         Text(
-            text = stringResource(R.string.settings_version),
+            text = stringResource(
+                R.string.settings_version,
+                BuildConfig.MAJOR_VERSION,
+                BuildConfig.MINOR_VERSION,
+                BuildConfig.PATCH_VERSION
+            ),
             style = MaterialTheme.typography.bodySmall.copy(textDecoration = TextDecoration.Underline),
             modifier = Modifier
                 .align(Alignment.CenterHorizontally)

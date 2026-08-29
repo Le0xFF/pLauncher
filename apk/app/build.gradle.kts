@@ -1,4 +1,6 @@
+import java.io.File
 import java.security.MessageDigest
+import java.util.Properties
 import java.util.regex.Pattern
 
 plugins {
@@ -8,16 +10,48 @@ plugins {
     alias(libs.plugins.detekt)
 }
 
+// Shared semantic version for both the companion app and the bundled watchapp.
+val majorVersion = "1"
+val minorVersion = "1"
+val patchVersion = "0"
+val appVersionName = "$majorVersion.$minorVersion.$patchVersion"
+
 android {
     namespace = "com.le0xff.plauncher"
     compileSdk = 36
+
+    val localPropsFile = File("${System.getenv("HOME")}/ANDROID/local.properties")
+    val localProps = if (localPropsFile.exists()) {
+        Properties().apply { localPropsFile.inputStream().use { load(it) } }
+    } else {
+        Properties()
+    }
+    // Base dir for resolving relative paths in the external local.properties.
+    val propsBaseDir = File(System.getenv("HOME") ?: "", "ANDROID").absoluteFile
+
+    signingConfigs {
+        create("release") {
+            val jksPath = localProps.getProperty("release.jks.file")
+                ?: error("release.jks.file not set in ${localPropsFile}")
+            val resolved = jksPath.replace("\${HOME}", System.getenv("HOME") ?: "")
+            storeFile = if (resolved.startsWith("/")) File(resolved).absoluteFile
+            else File(propsBaseDir, resolved).canonicalFile
+            storePassword = localProps.getProperty("release.jks.password", "")
+            keyAlias = localProps.getProperty("release.jks.key.alias", "release")
+            keyPassword = localProps.getProperty("release.jks.key.password", "")
+        }
+    }
 
     defaultConfig {
         applicationId = "com.le0xff.plauncher"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
-        versionName = "1.0"
+        versionName = appVersionName
+
+        buildConfigField("String", "MAJOR_VERSION", "\"$majorVersion\"")
+        buildConfigField("String", "MINOR_VERSION", "\"$minorVersion\"")
+        buildConfigField("String", "PATCH_VERSION", "\"$patchVersion\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -29,6 +63,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
@@ -37,6 +72,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -102,8 +138,28 @@ val lintPbw = tasks.register<Exec>("lintPbw") {
     }
 }
 
+// Generate pbw/package.json from the .template, injecting the shared semver so the
+// watchapp versionLabel always matches the companion app version.
+val generatePbwPackageJson = tasks.register("generatePbwPackageJson") {
+    val templateFile = File(pbwDir, "package.json.template")
+    val outputFile = File(pbwDir, "package.json")
+    inputs.file(templateFile)
+    outputs.file(outputFile)
+    onlyIf {
+        if (!templateFile.exists()) {
+            logger.warn("WARNING: generatePbwPackageJson skipped — package.json.template not found.")
+        }
+        templateFile.exists()
+    }
+
+    doLast {
+        if (!templateFile.exists()) return@doLast
+        outputFile.writeText(templateFile.readText().replace("__VERSION__", appVersionName))
+    }
+}
+
 val buildWatchapp = tasks.register<Exec>("buildWatchapp") {
-    dependsOn(lintPbw)
+    dependsOn(lintPbw, generatePbwPackageJson)
     workingDir = pbwDir
     commandLine = listOf("pebble", "build")
     isIgnoreExitValue = true
@@ -207,4 +263,12 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.con
     dependsOn(bundleWatchPbw)
     dependsOn(generatePbwInfo)
     dependsOn(lintApk)
+}
+
+// The lint vital analysis task (part of assembleRelease) reads the merged assets
+// directory that bundleWatchPbw / generatePbwInfo write into; declare an explicit
+// dependency so Gradle orders them before it.
+tasks.matching { it.name == "lintVitalAnalyzeRelease" || it.name == "generateReleaseLintVitalReportModel" }.configureEach {
+    dependsOn(bundleWatchPbw)
+    dependsOn(generatePbwInfo)
 }

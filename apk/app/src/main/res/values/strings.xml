@@ -92,7 +92,7 @@
     <string name="settings_theme_amoled">AMOLED</string>
     <string name="button_grant">Grant</string>
     <string name="button_revoke">Revoke</string>
-    <string name="settings_version">v1.0.0</string>
+    <string name="settings_version" translatable="false">v%1$s.%2$s.%3$s</string>
     <string name="github_repo_url">https://github.com/Le0xFF/pLauncher</string>
     <string name="picker_title">Pick Apps</string>
     <string name="placeholder_search">Search...</string>
