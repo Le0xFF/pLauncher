@@ -12,7 +12,7 @@ plugins {
 
 // Shared semantic version for both the companion app and the bundled watchapp.
 val majorVersion = "1"
-val minorVersion = "0"
+val minorVersion = "1"
 val patchVersion = "0"
 val appVersionName = "$majorVersion.$minorVersion.$patchVersion"
 
