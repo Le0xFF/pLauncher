@@ -24,6 +24,24 @@ The script accepts either `.kra` (Krita project, exported via `krita --export`) 
 - `convert` (ImageMagick, for mipmap resizing — `--apk` only)
 - `python3` with PIL/Pillow (for splash screen generation — `--apk` only)
 
+## Version Management
+
+The project uses a single shared semantic version (major.minor.patch) for both the Android companion app and the Pebble watchapp. The three components are defined once in `apk/app/build.gradle.kts`:
+
+```kotlin
+val majorVersion = "1"
+val minorVersion = "1"
+val patchVersion = "0"
+val appVersionName = "$majorVersion.$minorVersion.$patchVersion"
+```
+
+To bump the version, edit only those three values. Both artifacts pick up the new version automatically:
+
+- **APK**: `versionName` is set to `appVersionName`, and `BuildConfig.MAJOR_VERSION` / `MINOR_VERSION` / `PATCH_VERSION` are exposed as build-config fields so the settings screen can display each component separately.
+- **Watchapp**: a Gradle task (`generatePbwPackageJson`) rewrites `pbw/package.json` from `pbw/package.json.template` (placeholder `__VERSION__` → `appVersionName`) before `pebble build` runs. The resulting `build/appinfo.json` then carries the same `versionLabel`.
+
+`pbw/package.json` is tracked in git so the watchapp can still be compiled standalone with `pebble build`; the template is the source of truth used by the Gradle flow.
+
 ## Watch App Compilation
 
 ### Prerequisites
@@ -74,21 +92,26 @@ pebble install --phone <phone-ip-address>
 
 ## Android Companion App Compilation
 
-### Environment Variables
+### Prerequisites
 
-Before building, set the required variable:
+- Shared Android SDK location: `${HOME}/ANDROID/sdk` (referenced by the common properties file) and/or `ANDROID_HOME` set to it
+- Common local properties at `${HOME}/ANDROID/local.properties`, containing at least:
+  ```properties
+  sdk.dir=${HOME}/ANDROID/sdk
+  release.jks.file=${HOME}/ANDROID/release.keystore
+  release.jks.password=<store-password>
+  release.jks.key.alias=<alias>
+  release.jks.key.password=<key-password>
+  ```
+- JDK 17 installed (the project's `gradle.properties` configures `org.gradle.java.home` to use Java 17 automatically)
+- Android Studio (optional, for IDE-based development)
+- Icon generated first (see "Icon Generation" above, `--apk` target)
+
+On build start, `settings.gradle.kts` copies `${HOME}/ANDROID/local.properties` into a generated `apk/local.properties` (resolving `${HOME}`), so no per-repo `local.properties` needs to be committed. If that file is absent, fall back to exporting `ANDROID_HOME`:
 
 ```bash
 export ANDROID_HOME=${HOME}/ANDROID/sdk
 ```
-
-### Prerequisites
-
-- Android SDK installed at `${HOME}/ANDROID/sdk`
-- JDK 17 installed (the project's `gradle.properties` configures `org.gradle.java.home` to use Java 17 automatically)
-- `ANDROID_HOME` environment variable set (see above)
-- Android Studio (optional, for IDE-based development)
-- Icon generated first (see "Icon Generation" above, `--apk` target)
 
 ### Build Command
 
@@ -99,16 +122,25 @@ cd apk/
 
 This runs without spawning a Gradle daemon, produces verbose output, and saves the full log to `apk/build/gradle_build.log` for later review.
 
+To also produce a signed release APK (uses the keystore from `${HOME}/ANDROID/local.properties`):
+
+```bash
+./gradlew --no-daemon assembleRelease 2>&1 | tee build/gradle_release.log
+```
+
+Both variants can be built together with `./gradlew --no-daemon assembleDebug assembleRelease`.
+
 ### Integrated Build Flow
 
 The Gradle build automatically handles the watchapp and linting as part of the APK compilation:
 
 1. **`commitHooks`**: Copies files from `config/hooks/` to `.git/hooks/` (e.g., the pre-commit hook). Runs on every build so hooks are installed automatically after a fresh clone.
 2. **`lintPbw`**: Runs `clang-format --dry-run --Werror` on `pbw/src/c/*.c` and `*.h` to verify C code formatting. Uses `isIgnoreExitValue = true` and logs a warning on failure.
-3. **`buildWatchapp`**: Runs `pebble build` to compile the watchapp for `basalt` and `emery`. Depends on `lintPbw`.
-4. **`bundleWatchPbw`**: Copies the resulting `.pbw` into `apk/app/src/main/assets/` as `plauncher.pbw`. Skipped with a warning if the `.pbw` does not exist.
-5. **`generatePbwInfo`**: Generates `pbw_info.txt` with version and MD5 checksum. Skipped with a warning if the `.pbw` does not exist.
-6. **`lintApk`**: Runs `detektMain` to verify Kotlin code against `apk/config/detekt.yml`. Uses `ignoreFailures = false` — violations block the build.
+3. **`generatePbwPackageJson`**: Rewrites `pbw/package.json` from `pbw/package.json.template`, injecting the shared `appVersionName` in place of the `__VERSION__` placeholder, so the watchapp version always matches the companion app (see "Version Management").
+4. **`buildWatchapp`**: Runs `pebble build` to compile the watchapp for `basalt` and `emery`. Depends on `lintPbw` and `generatePbwPackageJson`.
+5. **`bundleWatchPbw`**: Copies the resulting `.pbw` into `apk/app/src/main/assets/` as `plauncher.pbw`. Skipped with a warning if the `.pbw` does not exist.
+6. **`generatePbwInfo`**: Generates `pbw_info.txt` with version and MD5 checksum. Skipped with a warning if the `.pbw` does not exist.
+7. **`lintApk`**: Runs `detektMain` to verify Kotlin code against `apk/config/detekt.yml`. Uses `ignoreFailures = false` — violations block the build.
 
 Icon export tasks (`exportPbwIcon`, `exportApkIcon`) are **commented out** in the build file to prevent icon regeneration on every build. Icons must be generated manually using `generate_icon.sh` (see "Icon Generation" above).
 
@@ -144,14 +176,21 @@ cd apk/
 
 ### Output
 
-- `.apk` file is generated in `apk/app/build/outputs/apk/debug/app-debug.apk`
+- Debug APK: `apk/app/build/outputs/apk/debug/app-debug.apk`
+- Release APK (signed): `apk/app/build/outputs/apk/release/app-release.apk`
 - Bundled watchapp: `apk/app/src/main/assets/plauncher.pbw`
 
 ### Install to Device
 
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
+# or, for the signed release build:
+adb install -r app/build/outputs/apk/release/app-release.apk
 ```
+
+### Signing (release builds)
+
+Release signing is configured in `apk/app/build.gradle.kts`, which reads `${HOME}/ANDROID/local.properties`. The keystore referenced by `release.jks.file` must exist along with matching `release.jks.password`, `release.jks.key.alias` and `release.jks.key.password` values. If the property file is missing or incomplete, `assembleRelease` fails during `validateSigningRelease`.
 
 ### Dependencies
 
@@ -166,11 +205,13 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ### Troubleshooting
 
-- **Gradle sync issues**: Ensure `ANDROID_HOME` points to a valid SDK. Run `./gradlew --refresh-dependencies` if dependencies are stale.
+- **Gradle sync / SDK location issues**: The build expects `${HOME}/ANDROID/local.properties` (auto-copied to `apk/local.properties` by `settings.gradle.kts`) or a valid `ANDROID_HOME`. If both are missing, Gradle fails with "SDK location not found".
 - **Missing SDK**: Install the required Android SDK components via `sdkmanager` or Android Studio SDK Manager.
 - **PebbleKit2 version conflicts**: The project uses `io.rebble.pebblekit2:client:1.2.0`. Check the [PebbleKitAndroid2 repository](https://github.com/pebble-dev/PebbleKitAndroid2) for compatibility notes.
 - **Compose compilation errors**: Ensure Kotlin version matches Compose compiler version in `app/build.gradle.kts`.
 - **`buildWatchapp` warning**: If the Pebble SDK is not installed or `pebble build` fails, you'll see a warning. The APK bundles the previous `.pbw` (if any) or no watchapp at all.
+- **`generatePbwPackageJson` skipped**: If `pbw/package.json.template` is missing, the task is skipped with a warning and the existing tracked `pbw/package.json` is used as-is.
+- **Release signing failure**: `validateSigningRelease` fails if `${HOME}/ANDROID/local.properties` is absent or its `release.jks.*` values don't match an existing keystore. Provide the file (or export `ANDROID_HOME` plus a valid keystore) before running `assembleRelease`.
 - **`bundleWatchPbw` / `generatePbwInfo` skipped**: These tasks skip silently if `pbw/build/pbw.pbw` does not exist (e.g., after a failed `pebble build`). Warnings are logged.
 - **`lintPbw` warning**: If `clang-format` is not installed or finds formatting violations, you'll see a warning. The build still completes. Install `clang-format` or fix formatting with `clang-format -i`.
 - **`lintApk` failure**: Detekt runs with `ignoreFailures = false`. If violations are found, the build fails. Fix the violations or update the baseline with `./gradlew detektGenerateBaseline`.
