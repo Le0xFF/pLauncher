@@ -12,12 +12,20 @@ android {
     namespace = "com.le0xff.plauncher"
     compileSdk = 36
 
+    val majorVersion = "1"
+    val minorVersion = "0"
+    val patchVersion = "0"
+
     defaultConfig {
         applicationId = "com.le0xff.plauncher"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
-        versionName = "1.0"
+        versionName = "$majorVersion.$minorVersion.$patchVersion"
+
+        buildConfigField("String", "MAJOR_VERSION", "\"$majorVersion\"")
+        buildConfigField("String", "MINOR_VERSION", "\"$minorVersion\"")
+        buildConfigField("String", "PATCH_VERSION", "\"$patchVersion\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -37,6 +45,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
